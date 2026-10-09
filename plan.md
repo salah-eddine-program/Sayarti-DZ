@@ -5,11 +5,11 @@
 
 ## المعمارية
 - **Frontend:** React + TypeScript + Vite، واجهة mobile-first تعمل على الهاتف وسطح المكتب.
-- **Backend:** Express + tRPC مع Manus OAuth؛ لا توجد حسابات أو كلمات مرور محلية.
-- **Database:** MySQL المُدار عبر Drizzle. كل سجل عمل يحمل `userId` ويتم التحقق من الملكية في الخادم قبل القراءة أو التعديل.
+- **Backend:** Express + tRPC مع Supabase Auth بالبريد وكلمة المرور عبر prompt بسيط؛ كلمات المرور لا تُخزّن في التطبيق. الواجهة ترسل Bearer access token والخادم يتحقق منه عبر `auth.getUser` ويحدّث `app_users`.
+- **Database:** Supabase Postgres عبر `@supabase/supabase-js`؛ كل سجل يحمل `auth_user_id` موثوقًا. تتم فلترة كل عملية والتحقق من ملكية المركبة، مع RLS ومفتاح أجنبي مركب لحماية قاعدة البيانات. مفتاح service-role للخادم فقط.
 - **البيانات:** المستخدمون، المركبات، الصيانة، المصاريف، الوقود، الوثائق. حالة Premium محفوظة في المستخدم لكن لا توجد mutation تمنح الاشتراك من العميل.
 - **الاشتراك:** بطاقة Premium بسعر 500 دج/السنة وحالة "الدفع غير مفعّل". لا دفع حقيقي أو ترقية محلية قبل إعداد بوابة دفع والتحقق من webhook.
-- **النشر:** Dockerfile القالب، فحص TypeScript وبناء الإنتاج، ثم checkpoint وPublish من WebDev.
+- **النشر:** هذه المهمة تعديل محلي وفحص وبناء فقط؛ لا نشر خارجي ولا دفع تغييرات إلى GitHub. يحتاج تشغيل الحفظ إلى خادم Express وليس استضافة ثابتة وحدها.
 - **Android:** Capacitor shell يحمّل النسخة المنشورة. يتم تجهيز مشروع Android وGitHub Actions لبناء APK، ولا يُعلن نجاح APK إلا بعد نجاح workflow وتنزيل artifact فعلياً.
 
 ## التصميم
@@ -24,8 +24,10 @@
 - `client/src/lib/i18n.ts`: النصوص الثلاثية الاتجاه.
 - `client/src/index.css`: نظام التصميم المتجاوب.
 - `server/routers.ts`: API المصادقة والبيانات والملف الشخصي.
-- `server/db.ts`: استعلامات Drizzle المقيدة بالمستخدم.
-- `drizzle/schema.ts`: مخطط الجداول والأنواع.
+- `server/db.ts`: استعلامات Supabase المقيدة بالمستخدم وتحويل أسماء الحقول إلى camelCase للحفاظ على tRPC والواجهة.
+- `client/src/lib/supabase.ts` و`client/src/_core/hooks/useAuth.ts`: عميل المصادقة العام ومتابعة الجلسة وتحديث cache.
+- `server/_core/supabase.ts` و`context.ts`: عميل الخادم والتحقق من الهوية.
+- `shared/types.ts` و`supabase/migrations/202610090001_sayarti.sql`: الأنواع ومخطط Postgres. الترحيل جديد ولم يُطبّق على قاعدة بعيدة؛ الاستيراد القديم منفصل.
 - `client/public/manus-routes.json`: مسارات الموقع.
 
 ## ضوابط السلامة

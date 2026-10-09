@@ -1,32 +1,47 @@
-import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
+import { requireSupabase } from "@/lib/supabase";
 
-export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+let loginInProgress = false;
 
-// Start the Manus OAuth login. Call this from an event handler or effect at the
-// moment you want to navigate, e.g. `onClick={() => startLogin()}`.
-//
-// It has SIDE EFFECTS — it mints a one-time nonce, writes the __Host- state
-// cookie, and navigates immediately — so the cookie nonce always matches the
-// `state` it sends. Do NOT call it during render (no `href={startLogin()}` /
-// `loginUrl={...}`): each call overwrites the cookie, so a stray render-phase
-// call would desync it from an in-flight login and the callback would reject it
-// with "invalid oauth state". It returns void by design, so there is no URL to
-// stash across renders.
-export const startLogin = () => {
-  const oauthPortalUrl = window.__MANUS_CONFIG__?.oauthPortalUrl;
-  const appId = window.__MANUS_CONFIG__?.projectId;
-  if (!oauthPortalUrl || !appId) throw new Error("Manus login is not configured");
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
+/** Invoke from an event handler, never during render. */
+export async function startLogin(): Promise<void> {
+  if (typeof window === "undefined" || loginInProgress) return;
+  loginInProgress = true;
+  try {
+    const client = requireSupabase();
+    const email = window.prompt("البريد الإلكتروني / Email")?.trim();
+    if (!email) return;
+    const password = window.prompt("كلمة المرور / Password");
+    if (!password) return;
 
-  const nonce = crypto.randomUUID();
-  document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; SameSite=None; Secure`;
-  const state = encodeOAuthState({ redirectUri, nonce });
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (!error) return;
 
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("responseType", "code");
+    // Supabase deliberately returns the same error for an absent account and a
+    // wrong password. Do not enumerate users or automatically register on errors.
+    if (error.code !== "invalid_credentials" && error.code !== "user_not_found") {
+      window.alert(error.message);
+      return;
+    }
+    if (!window.confirm("البريد أو كلمة المرور غير صحيحة. إن لم يكن لديك حساب، هل تريد إنشاء حساب جديد؟")) return;
+    const confirmation = window.prompt("أعد كتابة كلمة المرور لإنشاء الحساب / Confirm password");
+    if (confirmation !== password) {
+      if (confirmation !== null) window.alert("كلمتا المرور غير متطابقتين.");
+      return;
+    }
+    const { data, error: signUpError } = await client.auth.signUp({ email, password });
+    if (signUpError) {
+      window.alert(signUpError.message);
+    } else if (!data.session) {
+      window.alert("تحقق من بريدك لتأكيد الحساب، ثم سجّل الدخول. إذا كان لديك حساب، استخدم كلمة المرور الصحيحة.");
+    }
+  } catch {
+    window.alert("تعذر تسجيل الدخول. تأكد من إعداد Supabase واتصال الشبكة وحاول مجددًا.");
+  } finally {
+    loginInProgress = false;
+  }
+}
 
-  window.location.href = url.toString();
-};
+export async function logout(): Promise<void> {
+  const { error } = await requireSupabase().auth.signOut({ scope: "local" });
+  if (error) throw error;
+}

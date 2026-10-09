@@ -1,7 +1,8 @@
-import { startLogin } from "@/const";
+import { logout as signOut, startLogin } from "@/const";
+import { supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc";
-import { TRPCClientError } from "@trpc/client";
-import { useCallback, useEffect, useMemo } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -9,89 +10,83 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  // Login is started via startLogin() in the effect below, only when we actually
-  // navigate — never during render. startLogin() mints a one-time nonce + writes
-  // the state cookie, so calling it per render would overwrite the cookie and
-  // desync it from an in-flight login's `state`.
   const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
+  const [session, setSession] = useState<Session | null>(null);
+  const [initializing, setInitializing] = useState(true);
+  const [authError, setAuthError] = useState<Error | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const loginRequested = useRef(false);
   const utils = trpc.useUtils();
 
+  useEffect(() => {
+    if (!supabase) {
+      setInitializing(false);
+      return;
+    }
+    let mounted = true;
+    let authEventReceived = false;
+    // Keep the callback synchronous: awaiting other Auth methods here can deadlock.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      authEventReceived = true;
+      if (!mounted) return;
+      setSession(nextSession);
+      setInitializing(false);
+      setAuthError(null);
+      if (nextSession) loginRequested.current = false;
+    });
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted || authEventReceived) return;
+      setSession(data.session);
+      setAuthError(error);
+      setInitializing(false);
+    }).catch(() => {
+      if (!mounted || authEventReceived) return;
+      setAuthError(new Error("تعذر استعادة جلسة تسجيل الدخول."));
+      setInitializing(false);
+    });
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
+
   const meQuery = trpc.auth.me.useQuery(undefined, {
+    enabled: !initializing && Boolean(session),
     retry: false,
     refetchOnWindowFocus: false,
   });
+  // Do not display cached data belonging to a previous account.
+  const user = session && meQuery.data?.authUserId === session.user.id ? meQuery.data : null;
+  const loading = initializing || (Boolean(session) && meQuery.isLoading) || signingOut;
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
-
+  const logoutMutation = trpc.auth.logout.useMutation();
   const logout = useCallback(async () => {
+    setSigningOut(true);
+    setAuthError(null);
     try {
-      await logoutMutation.mutateAsync();
-    } catch (error: unknown) {
-      if (
-        error instanceof TRPCClientError &&
-        error.data?.code === "UNAUTHORIZED"
-      ) {
-        return;
-      }
-      throw error;
-    } finally {
-      // Clear the Preview auto-login token mirrored into sessionStorage, so
-      // header-based sessions (Safari ITP / WebView) are logged out too. The
-      // backend cookie is cleared by the logout mutation.
-      try {
-        sessionStorage.removeItem("manus-cookie");
-      } catch {}
+      // The browser owns the refresh token. Sign it out even if the API is offline.
+      try { await logoutMutation.mutateAsync(); } catch { /* local sign-out still runs */ }
+      await signOut();
+      setSession(null);
       utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error : new Error("تعذر تسجيل الخروج."));
+    } finally {
+      setSigningOut(false);
     }
   }, [logoutMutation, utils]);
 
-  const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
-    return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
-    };
-  }, [
-    meQuery.data,
-    meQuery.error,
-    meQuery.isLoading,
-    logoutMutation.error,
-    logoutMutation.isPending,
-  ]);
-
   useEffect(() => {
-    if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
-    if (state.user) return;
-    if (typeof window === "undefined") return;
+    if (!redirectOnUnauthenticated || loading || session || authError || loginRequested.current) return;
     if (redirectPath && window.location.pathname === redirectPath) return;
-
-    // Navigate at this moment only. startLogin() mints the nonce + cookie itself.
-    if (redirectPath) {
-      window.location.href = redirectPath;
-    } else {
-      startLogin();
-    }
-  }, [
-    redirectOnUnauthenticated,
-    redirectPath,
-    logoutMutation.isPending,
-    meQuery.isLoading,
-    state.user,
-  ]);
+    loginRequested.current = true;
+    if (redirectPath) window.location.assign(redirectPath);
+    else void startLogin();
+  }, [redirectOnUnauthenticated, redirectPath, loading, session, authError]);
 
   return {
-    ...state,
+    session,
+    user,
+    loading,
+    error: authError ?? meQuery.error ?? null,
+    isAuthenticated: Boolean(session && user),
     refresh: () => meQuery.refetch(),
     logout,
   };

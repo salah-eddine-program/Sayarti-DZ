@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
+import { revokeSession } from "./_core/auth";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
@@ -12,21 +11,20 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user && ctx.accessToken) await revokeSession(ctx.accessToken);
       return { success: true } as const;
     }),
   }),
   app: router({
-    data: protectedProcedure.query(({ ctx }) => db.getAppData(ctx.user.id)),
+    data: protectedProcedure.query(({ ctx }) => db.getAppData(ctx.user.authUserId)),
     settings: protectedProcedure
       .input(z.object({
         language: z.enum(["ar", "fr", "en"]).optional(),
         theme: z.enum(["light", "dark"]).optional(),
         profileLink: z.string().url().max(2048).nullable().optional(),
       }))
-      .mutation(({ ctx, input }) => db.updateUserSettings(ctx.user.id, input)),
+      .mutation(({ ctx, input }) => db.updateUserSettings(ctx.user.authUserId, input)),
     vehicle: router({
       create: protectedProcedure
         .input(z.object({
@@ -38,8 +36,8 @@ export const appRouter = router({
           plateNumber: z.string().trim().max(32).optional(),
         }))
         .mutation(async ({ ctx, input }) => {
-          await db.createVehicle(ctx.user.id, input);
-          return db.getAppData(ctx.user.id);
+          await db.createVehicle(ctx.user.authUserId, input);
+          return db.getAppData(ctx.user.authUserId);
         }),
       update: protectedProcedure
         .input(z.object({
@@ -53,8 +51,8 @@ export const appRouter = router({
         }))
         .mutation(async ({ ctx, input }) => {
           const { id, ...value } = input;
-          await db.updateVehicle(ctx.user.id, id, value);
-          return db.getAppData(ctx.user.id);
+          await db.updateVehicle(ctx.user.authUserId, id, value);
+          return db.getAppData(ctx.user.authUserId);
         }),
     }),
     maintenance: router({
@@ -69,8 +67,8 @@ export const appRouter = router({
           invoiceUrl: z.string().url().max(2048).optional(),
         }))
         .mutation(async ({ ctx, input }) => {
-          await db.createMaintenance(ctx.user.id, input);
-          return db.getAppData(ctx.user.id);
+          await db.createMaintenance(ctx.user.authUserId, input);
+          return db.getAppData(ctx.user.authUserId);
         }),
     }),
     expense: router({
@@ -83,8 +81,8 @@ export const appRouter = router({
           expenseDate: dateValue,
         }))
         .mutation(async ({ ctx, input }) => {
-          await db.createExpense(ctx.user.id, input);
-          return db.getAppData(ctx.user.id);
+          await db.createExpense(ctx.user.authUserId, input);
+          return db.getAppData(ctx.user.authUserId);
         }),
     }),
     fuel: router({
@@ -98,8 +96,8 @@ export const appRouter = router({
           fuelDate: dateValue,
         }))
         .mutation(async ({ ctx, input }) => {
-          await db.createFuel(ctx.user.id, input);
-          return db.getAppData(ctx.user.id);
+          await db.createFuel(ctx.user.authUserId, input);
+          return db.getAppData(ctx.user.authUserId);
         }),
     }),
     document: router({
@@ -111,8 +109,8 @@ export const appRouter = router({
           fileUrl: z.string().url().max(2048).optional(),
         }))
         .mutation(async ({ ctx, input }) => {
-          await db.createDocument(ctx.user.id, input);
-          return db.getAppData(ctx.user.id);
+          await db.createDocument(ctx.user.authUserId, input);
+          return db.getAppData(ctx.user.authUserId);
         }),
     }),
   }),
