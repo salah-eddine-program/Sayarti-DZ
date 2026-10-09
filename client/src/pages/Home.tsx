@@ -66,7 +66,7 @@ function daysUntil(value: string | null | undefined) {
 }
 
 function Logo({ size = 52 }: { size?: number }) {
-  return <img className="logo-mark" style={{ width: size, height: size }} src="/assets/sayarti-mark.svg" alt="Sayarti DZ" />;
+  return <img className="logo-mark" style={{ width: size, height: size }} src={`${import.meta.env.BASE_URL}assets/sayarti-mark.svg`} alt="Sayarti DZ" />;
 }
 
 function Landing({ lang, onLang, onDemo }: { lang: Language; onLang: (l: Language) => void; onDemo: () => void }) {
