@@ -1,8 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@shared/types";
 
-const url = import.meta.env.VITE_SUPABASE_URL?.trim();
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+// These are Supabase publishable values. They are safe in browser code;
+// the service-role key remains server-only in SUPABASE_SERVICE_ROLE_KEY.
+const url = (import.meta.env.VITE_SUPABASE_URL || "https://qndughzzhsfdlrgikpzl.supabase.co").trim();
+const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_zuBNyGr4H4OJVYf-J06_mw_nbuBSmIG").trim();
 
 // Only the public anonymous key belongs in the browser. Never use a service key here.
 export const supabase = url && anonKey
