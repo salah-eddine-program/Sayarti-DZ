@@ -1,0 +1,57 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_server_url:
+        description: "Public HTTPS URL for the deployed Sayarti DZ app"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web app
+        run: pnpm build
+      - name: Add Android platform
+        run: test -d android || pnpm exec cap add android
+        env:
+          APP_SERVER_URL: ${{ inputs.app_server_url }}
+      - name: Sync Capacitor
+        run: pnpm exec cap sync android
+        env:
+          APP_SERVER_URL: ${{ inputs.app_server_url }}
+      - name: Build debug APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sayarti-dz-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

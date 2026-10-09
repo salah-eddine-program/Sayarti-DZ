@@ -1,2 +1,28 @@
-# Sayarti-DZ
-Sayarti DZ is a mobile app designed for Algerian car owners to manage vehicle maintenance, expenses, fuel, and important documents. It provides reminders for maintenance and document expiration, helping users track their car and control its costs easily.
+# Sayarti DZ
+
+تطبيق إدارة السيارة للجزائر: الصيانة، المصاريف، الوقود، الوثائق والتنبيهات، بثلاث لغات (العربية والفرنسية والإنجليزية).
+
+## التشغيل
+
+```bash
+pnpm install --frozen-lockfile
+pnpm db:push
+pnpm dev
+```
+
+تسجيل الدخول يتم عبر Manus OAuth. لا تُنشئ الواجهة كلمات مرور محلية ولا تحتوي على أسرار. قاعدة البيانات المُدارة مشتركة بين التطوير والإنتاج؛ نفّذ تغييرات المخطط فقط عبر Drizzle وبعد مراجعة migration.
+
+## الفحوص
+
+```bash
+pnpm check
+pnpm build
+```
+
+## الاشتراك
+
+Premium معروض بسعر 500 دج سنوياً، لكن الدفع الحقيقي غير مفعّل. لا توجد mutation تمنح Premium من العميل؛ يجب إعداد بوابة دفع والتحقق من webhook قبل التفعيل.
+
+## Android
+
+نسخة الويب قابلة للتثبيت كـPWA. ملف GitHub Actions في `.github/workflows/android-apk.yml` يجهز Capacitor ويبني APK بعد توفير رابط الإنتاج في متغير `APP_SERVER_URL`. لا تُعتبر العملية ناجحة إلا عند تنزيل artifact فعلي.
