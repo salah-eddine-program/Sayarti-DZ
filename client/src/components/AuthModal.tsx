@@ -72,7 +72,14 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
       const credentials = { email: fields.email.trim(), password: fields.password };
       // Account creation is explicit, never an automatic fallback after failed sign-in.
       const { data, error: authError } = signup
-        ? await client.auth.signUp(credentials)
+        ? await client.auth.signUp({
+            ...credentials,
+            options: {
+              // Supabase otherwise falls back to its dashboard Site URL,
+              // which may still be localhost in development.
+              emailRedirectTo: `${window.location.origin}/`,
+            },
+          })
         : await client.auth.signInWithPassword(credentials);
       if (!mounted.current) return;
       if (authError) {

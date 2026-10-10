@@ -119,7 +119,11 @@ describe("AuthModal", () => {
     fill();
     fireEvent.change(screen.getByLabelText(authCopy.en.confirmation), { target: { value: "password123" } });
     await userEvent.click(screen.getByRole("button", { name: authCopy.en.signup }));
-    expect(auth.signUp).toHaveBeenCalledWith({ email: "driver@example.com", password: "password123" });
+    expect(auth.signUp).toHaveBeenCalledWith({
+      email: "driver@example.com",
+      password: "password123",
+      options: { emailRedirectTo: `${window.location.origin}/` },
+    });
     expect(screen.getByRole("status").textContent).toBe(authCopy.en.checkEmail);
     expect(onSuccess).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: authCopy.en.retry }));
