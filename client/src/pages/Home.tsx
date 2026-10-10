@@ -100,7 +100,8 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
-  const dataQuery = trpc.app.data.useQuery(undefined, { enabled: auth.isAuthenticated, retry: false });
+  const hasSession = Boolean(auth.session);
+  const dataQuery = trpc.app.data.useQuery(undefined, { enabled: hasSession, retry: false });
   const utils = trpc.useUtils();
   const settingsMutation = trpc.app.settings.useMutation({ onSuccess: () => { dataQuery.refetch(); showToast(tr("profileSaved")); } });
   const vehicleCreate = trpc.app.vehicle.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
@@ -109,7 +110,7 @@ export default function Home() {
   const expenseCreate = trpc.app.expense.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("expenseSaved")); } });
   const fuelCreate = trpc.app.fuel.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("fuelSaved")); } });
   const documentCreate = trpc.app.document.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); } });
-  const isDemo = !auth.isAuthenticated && demoMode;
+  const isDemo = !hasSession && demoMode;
   const data = (isDemo ? demo : dataQuery.data) as AppData | undefined;
   const currentVehicle = data?.vehicles?.find(v => v.id === selectedVehicleId) ?? data?.vehicles?.[0];
   const currentId = currentVehicle?.id;
@@ -212,8 +213,8 @@ export default function Home() {
   }
 
   const authModal = authOpen && <AuthModal lang={lang} dark={dark} onClose={() => setAuthOpen(false)} onSuccess={() => { setAuthOpen(false); setDemoMode(false); closeForm(); setSelectedVehicleId(undefined); }} />;
-  if (auth.loading && !demoMode) return <><div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>{authModal}</>;
-  if (!auth.isAuthenticated && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
+  if ((auth.loading || (hasSession && dataQuery.isLoading)) && !demoMode) return <><div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>{authModal}</>;
+  if (!hasSession && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
 
   const busy = vehicleCreate.isPending || vehicleUpdate.isPending || maintenanceCreate.isPending || expenseCreate.isPending || fuelCreate.isPending || documentCreate.isPending;
   const monthlySpend = (data?.expenses ?? []).reduce((sum, item) => sum + item.amount, 0) + (data?.maintenance ?? []).reduce((sum, item) => sum + item.cost, 0);
@@ -221,9 +222,9 @@ export default function Home() {
   const lastFuel = data?.fuel?.[0];
   const nextDocument = data?.documents?.find(d => (daysUntil(d.expiresOn) ?? 9999) >= 0);
   const mutationError = [vehicleCreate, vehicleUpdate, maintenanceCreate, expenseCreate, fuelCreate, documentCreate].find(m => m.error)?.error;
-  if (auth.isAuthenticated && dataQuery.data && dataQuery.data.vehicles.length === 0) {
+  if (hasSession && (!dataQuery.data || dataQuery.data.vehicles.length === 0)) {
     return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
-      <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data.user?.name ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} onSubmit={completeFirstSetup} /></main>
+      <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data?.user?.name ?? (auth.session?.user.user_metadata?.name as string | undefined) ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} onSubmit={completeFirstSetup} /></main>
       {authModal}
     </div>;
   }

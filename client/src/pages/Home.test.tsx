@@ -7,7 +7,7 @@ import { authCopy } from "@/lib/auth";
 import { startLogin } from "@/const";
 
 const mocks = vi.hoisted(() => ({
-  auth: { isAuthenticated: false, loading: false, logout: vi.fn() },
+  auth: { isAuthenticated: false, loading: false, session: null as unknown, logout: vi.fn() },
   signInWithPassword: vi.fn(),
   signUp: vi.fn(),
   dataQuery: vi.fn(),
@@ -35,6 +35,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.auth.isAuthenticated = false;
   mocks.auth.loading = false;
+  mocks.auth.session = null;
   mocks.dataQuery.mockReturnValue({ data: undefined, refetch: vi.fn() });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: null }, error: { code: "invalid_credentials" } });
   mocks.signUp.mockResolvedValue({ data: { session: null }, error: null });
@@ -121,6 +122,7 @@ describe("Home authentication integration", () => {
   it("closes and switches out of demo mode once a real session is returned", async () => {
     mocks.signInWithPassword.mockImplementationOnce(async () => {
       mocks.auth.isAuthenticated = true;
+      mocks.auth.session = { user: { user_metadata: {} }, access_token: "test-session" };
       return { data: { session: { access_token: "test-session" } }, error: null };
     });
     render(<Home />);
