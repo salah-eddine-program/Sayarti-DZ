@@ -98,6 +98,7 @@ export default function Home() {
   const [form, setForm] = useState<FormState>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
   const [toast, setToast] = useState("");
+  const [setupError, setSetupError] = useState("");
   const [setupData, setSetupData] = useState<AppData | undefined>();
   const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
@@ -106,8 +107,8 @@ export default function Home() {
   const utils = trpc.useUtils();
   const settingsMutation = trpc.app.settings.useMutation({ onSuccess: () => { dataQuery.refetch(); showToast(tr("profileSaved")); } });
   const vehicleCreate = trpc.app.vehicle.create.useMutation({
-    onSuccess: (result) => { setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
-    onError: () => showToast(lang === "ar" ? "تعذر حفظ السيارة. تحقق من الاتصال وحاول مرة أخرى." : lang === "fr" ? "Impossible d’enregistrer le véhicule. Réessayez." : "The vehicle could not be saved. Please try again."),
+    onSuccess: (result) => { setSetupError(""); setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
+    onError: () => setSetupError(lang === "ar" ? "تعذر حفظ السيارة. تحقق من تسجيل الدخول والاتصال ثم حاول مرة أخرى." : lang === "fr" ? "Impossible d’enregistrer le véhicule. Vérifiez la connexion puis réessayez." : "The vehicle could not be saved. Check your connection and try again."),
   });
   const vehicleUpdate = trpc.app.vehicle.update.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
   const maintenanceCreate = trpc.app.maintenance.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); } });
@@ -205,9 +206,10 @@ export default function Home() {
   function completeFirstSetup(values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) {
     const name = values.name.trim();
     if (name.length < 2 || !values.brand.trim() || !values.model.trim() || !values.year || !values.mileage) {
-      showToast(tr("required"));
+      setSetupError(lang === "ar" ? "أكمل الاسم والعلامة والموديل والسنة والكيلومترات قبل الحفظ." : lang === "fr" ? "Complétez le nom, la marque, le modèle, l’année et le kilométrage." : "Complete your name, make, model, year, and mileage before saving.");
       return;
     }
+    setSetupError("");
     settingsMutation.mutate({ name });
     vehicleCreate.mutate({
       brand: values.brand.trim(), model: values.model.trim(), year: Number(values.year),
@@ -228,7 +230,7 @@ export default function Home() {
   const mutationError = [vehicleCreate, vehicleUpdate, maintenanceCreate, expenseCreate, fuelCreate, documentCreate].find(m => m.error)?.error;
   if (hasSession && !setupData && (!dataQuery.data || dataQuery.data.vehicles.length === 0)) {
     return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
-      <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data?.user?.name ?? (auth.session?.user.user_metadata?.name as string | undefined) ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} onSubmit={completeFirstSetup} /></main>
+      <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data?.user?.name ?? (auth.session?.user.user_metadata?.name as string | undefined) ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} error={setupError} onSubmit={completeFirstSetup} /></main>
       {authModal}
     </div>;
   }
@@ -251,11 +253,11 @@ export default function Home() {
 
 function PageHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) { return <div className="page-header"><div><p className="eyebrow">SAYARTI DZ</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action && <button className="primary-button" onClick={onAction}><Plus size={18} />{action}</button>}</div>; }
 
-function FirstSetup({ lang, tr, initialName, busy, onSubmit }: { lang: Language; tr: (k: TranslationKey) => string; initialName: string; busy: boolean; onSubmit: (values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) => void }) {
+function FirstSetup({ lang, tr, initialName, busy, error, onSubmit }: { lang: Language; tr: (k: TranslationKey) => string; initialName: string; busy: boolean; error: string; onSubmit: (values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) => void }) {
   const [values, setValues] = useState({ name: initialName, brand: "", model: "", year: "", fuelType: "diesel", mileage: "", plateNumber: "" });
   const set = (name: string, value: string) => setValues(current => ({ ...current, [name]: value }));
   const label = lang === "ar" ? { name: "اسمك الكامل", brand: "العلامة التجارية", model: "نوع / موديل السيارة", year: "سنة الصنع", fuel: "نوع الوقود", mileage: "عداد الكيلومترات", plate: "رقم التسجيل" } : lang === "fr" ? { name: "Votre nom complet", brand: "Marque", model: "Modèle", year: "Année", fuel: "Carburant", mileage: "Kilométrage", plate: "Immatriculation" } : { name: "Your full name", brand: "Make", model: "Model", year: "Year", fuel: "Fuel type", mileage: "Odometer", plate: "Plate number" };
-  return <div className="page first-setup-page"><div className="first-setup-intro"><div className="empty-icon"><CarFront size={30} /></div><p className="eyebrow">SAYARTI DZ</p><h1>{lang === "ar" ? "لنبدأ بإعداد سيارتك" : lang === "fr" ? "Configurons votre véhicule" : "Let’s set up your vehicle"}</h1><p>{lang === "ar" ? "أدخل معلوماتك الأساسية وسيارتك الأولى حتى تصبح لوحة القيادة جاهزة للاستخدام." : lang === "fr" ? "Ajoutez vos informations et votre premier véhicule pour activer votre tableau de bord." : "Add your details and first vehicle to activate your dashboard."}</p></div><section className="panel first-setup-card"><form onSubmit={event => { event.preventDefault(); onSubmit(values); }}><div className="form-grid"><Field label={label.name} name="name" value={values.name} set={set} required /><Field label={label.brand} name="brand" value={values.brand} set={set} required /><Field label={label.model} name="model" value={values.model} set={set} required /><Field label={label.year} name="year" value={values.year} set={set} type="number" required /><Field label={label.mileage} name="mileage" value={values.mileage} set={set} type="number" required /><Field label={label.plate} name="plateNumber" value={values.plateNumber} set={set} /><SelectField label={label.fuel} name="fuelType" value={values.fuelType} set={set} options={[["diesel", tr("diesel")], ["petrol", tr("petrol")], ["lpg", tr("lpg")], ["electric", tr("electric")]]} /></div><div className="modal-actions"><button className="primary-button" disabled={busy} type="submit">{busy ? <span className="spinner" /> : <CheckCircle2 size={17} />}{lang === "ar" ? "حفظ وبدء الاستخدام" : lang === "fr" ? "Enregistrer et commencer" : "Save and continue"}</button></div></form></section></div>;
+  return <div className="page first-setup-page"><div className="first-setup-intro"><div className="empty-icon"><CarFront size={30} /></div><p className="eyebrow">SAYARTI DZ</p><h1>{lang === "ar" ? "لنبدأ بإعداد سيارتك" : lang === "fr" ? "Configurons votre véhicule" : "Let’s set up your vehicle"}</h1><p>{lang === "ar" ? "أدخل معلوماتك الأساسية وسيارتك الأولى حتى تصبح لوحة القيادة جاهزة للاستخدام." : lang === "fr" ? "Ajoutez vos informations et votre premier véhicule pour activer votre tableau de bord." : "Add your details and first vehicle to activate your dashboard."}</p></div><section className="panel first-setup-card"><form onSubmit={event => { event.preventDefault(); onSubmit(values); }}><div className="form-grid"><Field label={label.name} name="name" value={values.name} set={set} required /><Field label={label.brand} name="brand" value={values.brand} set={set} required /><Field label={label.model} name="model" value={values.model} set={set} required /><Field label={label.year} name="year" value={values.year} set={set} type="number" required /><Field label={label.mileage} name="mileage" value={values.mileage} set={set} type="number" required /><Field label={label.plate} name="plateNumber" value={values.plateNumber} set={set} /><SelectField label={label.fuel} name="fuelType" value={values.fuelType} set={set} options={[["diesel", tr("diesel")], ["petrol", tr("petrol")], ["lpg", tr("lpg")], ["electric", tr("electric")]]} /></div>{error && <p className="setup-error" role="alert">{error}</p>}<div className="modal-actions"><button className="primary-button" disabled={busy} type="submit">{busy ? <span className="spinner" /> : <CheckCircle2 size={17} />}{lang === "ar" ? "حفظ وبدء الاستخدام" : lang === "fr" ? "Enregistrer et commencer" : "Save and continue"}</button></div></form></section></div>;
 }
 
 function Dashboard({ data, currentVehicle, monthlySpend, nextDocument, lastFuel, lang, tr, onAdd, onPage, onVehicle, onEditVehicle }: { data?: AppData; currentVehicle?: AppData["vehicles"][number]; monthlySpend: number; nextDocument?: AppData["documents"][number]; lastFuel?: AppData["fuel"][number]; lang: Language; tr: (k: TranslationKey) => string; onAdd: (kind: Exclude<FormKind, null>) => void; onPage: (p: Page) => void; onVehicle: () => void; onEditVehicle: () => void }) {

@@ -165,3 +165,5 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .first-setup-card .modal-actions { justify-content: center; margin-top: 28px; }
 .first-setup-card .primary-button { min-width: 220px; justify-content: center; }
 @media (max-width: 640px) { .first-setup-content { padding: 18px; } .first-setup-page { padding: 0; } .first-setup-card { padding: 18px; } .first-setup-card .form-grid { grid-template-columns: 1fr; } }
+
+.setup-error { margin: 18px 0 0; padding: 12px 14px; border: 1px solid rgba(217,94,82,.35); border-radius: 12px; color: #a33d35; background: rgba(217,94,82,.08); line-height: 1.6; font-size: 14px; }
