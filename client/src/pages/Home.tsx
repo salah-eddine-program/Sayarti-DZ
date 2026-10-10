@@ -98,20 +98,24 @@ export default function Home() {
   const [form, setForm] = useState<FormState>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
   const [toast, setToast] = useState("");
+  const [setupData, setSetupData] = useState<AppData | undefined>();
   const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
   const hasSession = Boolean(auth.session);
   const dataQuery = trpc.app.data.useQuery(undefined, { enabled: hasSession, retry: false });
   const utils = trpc.useUtils();
   const settingsMutation = trpc.app.settings.useMutation({ onSuccess: () => { dataQuery.refetch(); showToast(tr("profileSaved")); } });
-  const vehicleCreate = trpc.app.vehicle.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
+  const vehicleCreate = trpc.app.vehicle.create.useMutation({
+    onSuccess: (result) => { setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
+    onError: () => showToast(lang === "ar" ? "تعذر حفظ السيارة. تحقق من الاتصال وحاول مرة أخرى." : lang === "fr" ? "Impossible d’enregistrer le véhicule. Réessayez." : "The vehicle could not be saved. Please try again."),
+  });
   const vehicleUpdate = trpc.app.vehicle.update.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
   const maintenanceCreate = trpc.app.maintenance.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); } });
   const expenseCreate = trpc.app.expense.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("expenseSaved")); } });
   const fuelCreate = trpc.app.fuel.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("fuelSaved")); } });
   const documentCreate = trpc.app.document.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); } });
   const isDemo = !hasSession && demoMode;
-  const data = (isDemo ? demo : dataQuery.data) as AppData | undefined;
+  const data = (isDemo ? demo : (setupData ?? dataQuery.data)) as AppData | undefined;
   const currentVehicle = data?.vehicles?.find(v => v.id === selectedVehicleId) ?? data?.vehicles?.[0];
   const currentId = currentVehicle?.id;
   const openAuth = useCallback(() => {
@@ -222,7 +226,7 @@ export default function Home() {
   const lastFuel = data?.fuel?.[0];
   const nextDocument = data?.documents?.find(d => (daysUntil(d.expiresOn) ?? 9999) >= 0);
   const mutationError = [vehicleCreate, vehicleUpdate, maintenanceCreate, expenseCreate, fuelCreate, documentCreate].find(m => m.error)?.error;
-  if (hasSession && (!dataQuery.data || dataQuery.data.vehicles.length === 0)) {
+  if (hasSession && !setupData && (!dataQuery.data || dataQuery.data.vehicles.length === 0)) {
     return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
       <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data?.user?.name ?? (auth.session?.user.user_metadata?.name as string | undefined) ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} onSubmit={completeFirstSetup} /></main>
       {authModal}
