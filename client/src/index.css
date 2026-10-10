@@ -153,3 +153,15 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 @media (prefers-reduced-motion: reduce) {
   .auth-modal *, .auth-modal *::before, .auth-modal *::after { transition: none !important; animation: none !important; }
 }
+
+/* First-run setup */
+.first-setup-content { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.first-setup-page { width: min(920px, 100%); margin: auto; }
+.first-setup-intro { max-width: 680px; margin: 0 auto 24px; text-align: center; }
+.first-setup-intro .empty-icon { margin: 0 auto 16px; }
+.first-setup-intro h1 { margin: 8px 0 10px; font-size: clamp(28px, 4vw, 46px); letter-spacing: -0.04em; }
+.first-setup-intro > p:last-child { color: var(--muted); line-height: 1.8; font-size: 16px; }
+.first-setup-card { max-width: 760px; margin: 0 auto; padding: clamp(20px, 4vw, 36px); box-shadow: 0 24px 70px rgba(11,61,70,.12); }
+.first-setup-card .modal-actions { justify-content: center; margin-top: 28px; }
+.first-setup-card .primary-button { min-width: 220px; justify-content: center; }
+@media (max-width: 640px) { .first-setup-content { padding: 18px; } .first-setup-page { padding: 0; } .first-setup-card { padding: 18px; } .first-setup-card .form-grid { grid-template-columns: 1fr; } }

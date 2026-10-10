@@ -48,9 +48,10 @@ export async function getUserByAuthId(authUserId: string): Promise<User | undefi
 
 export async function updateUserSettings(
   authUserId: string,
-  values: { language?: User["language"]; theme?: User["theme"]; profileLink?: string | null },
+  values: { name?: string | null; language?: User["language"]; theme?: User["theme"]; profileLink?: string | null },
 ) {
   const update: Partial<AppUserRow> = { updated_at: new Date().toISOString() };
+  if (values.name !== undefined) update.name = values.name;
   if (values.language !== undefined) update.language = values.language;
   if (values.theme !== undefined) update.theme = values.theme;
   if (values.profileLink !== undefined) update.profile_link = values.profileLink;

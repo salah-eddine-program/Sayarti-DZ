@@ -197,6 +197,20 @@ export default function Home() {
   }
   function profileLink() { return (data?.user?.profileLink || (isDemo ? localStorage.getItem("sayarti.profileLink") : null) || PROFILE_DEFAULT); }
 
+  function completeFirstSetup(values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) {
+    const name = values.name.trim();
+    if (name.length < 2 || !values.brand.trim() || !values.model.trim() || !values.year || !values.mileage) {
+      showToast(tr("required"));
+      return;
+    }
+    settingsMutation.mutate({ name });
+    vehicleCreate.mutate({
+      brand: values.brand.trim(), model: values.model.trim(), year: Number(values.year),
+      fuelType: values.fuelType as "diesel" | "petrol" | "lpg" | "electric",
+      mileage: Number(values.mileage), plateNumber: values.plateNumber.trim() || undefined,
+    });
+  }
+
   const authModal = authOpen && <AuthModal lang={lang} dark={dark} onClose={() => setAuthOpen(false)} onSuccess={() => { setAuthOpen(false); setDemoMode(false); closeForm(); setSelectedVehicleId(undefined); }} />;
   if (auth.loading && !demoMode) return <><div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>{authModal}</>;
   if (!auth.isAuthenticated && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
@@ -207,6 +221,12 @@ export default function Home() {
   const lastFuel = data?.fuel?.[0];
   const nextDocument = data?.documents?.find(d => (daysUntil(d.expiresOn) ?? 9999) >= 0);
   const mutationError = [vehicleCreate, vehicleUpdate, maintenanceCreate, expenseCreate, fuelCreate, documentCreate].find(m => m.error)?.error;
+  if (auth.isAuthenticated && dataQuery.data && dataQuery.data.vehicles.length === 0) {
+    return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
+      <main className="content first-setup-content"><FirstSetup lang={lang} tr={tr} initialName={dataQuery.data.user?.name ?? ""} busy={vehicleCreate.isPending || settingsMutation.isPending} onSubmit={completeFirstSetup} /></main>
+      {authModal}
+    </div>;
+  }
   return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
     <aside className="sidebar"><div className="brand"><Logo size={44} /><div><strong>{tr("brand")}</strong><span>{tr("tagline")}</span></div></div><nav>{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "fuel", icon: Fuel, key: "fuel" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</nav><div className="sidebar-bottom"><div className="sidebar-profile"><div className="avatar">{(data?.user?.name || "S").slice(0, 1).toUpperCase()}</div><div><strong>{data?.user?.name || tr("sampleData")}</strong><span>{isDemo ? tr("sampleData") : data?.user?.email || ""}</span></div></div>{isDemo ? <button className="sidebar-login" onClick={openAuth}><LogIn size={16} />{tr("login")}</button> : <button className="sidebar-login" onClick={() => auth.logout()}><LogOut size={16} />{tr("logout")}</button>}</div></aside>
     <main className="content"><header className="topbar"><div className="mobile-brand"><Logo size={38} /><strong>{tr("brand")}</strong></div><div className="topbar-actions"><LanguageSelect value={lang} onChange={setLanguage} /><button className="icon-button" onClick={() => setTheme(!dark)} aria-label={tr("theme")}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="menu-button"><Menu size={20} /></button></div></header>{isDemo && <div className="demo-banner"><Sparkles size={16} /><span><b>{tr("sampleData")}</b> — {tr("sampleNote")}</span><button onClick={openAuth}>{tr("login")}</button></div>}{mutationError && <div className="error-banner"><AlertTriangle size={16} />{mutationError.message}</div>}
@@ -225,6 +245,13 @@ export default function Home() {
 }
 
 function PageHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) { return <div className="page-header"><div><p className="eyebrow">SAYARTI DZ</p><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action && <button className="primary-button" onClick={onAction}><Plus size={18} />{action}</button>}</div>; }
+
+function FirstSetup({ lang, tr, initialName, busy, onSubmit }: { lang: Language; tr: (k: TranslationKey) => string; initialName: string; busy: boolean; onSubmit: (values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) => void }) {
+  const [values, setValues] = useState({ name: initialName, brand: "", model: "", year: "", fuelType: "diesel", mileage: "", plateNumber: "" });
+  const set = (name: string, value: string) => setValues(current => ({ ...current, [name]: value }));
+  const label = lang === "ar" ? { name: "اسمك الكامل", brand: "العلامة التجارية", model: "نوع / موديل السيارة", year: "سنة الصنع", fuel: "نوع الوقود", mileage: "عداد الكيلومترات", plate: "رقم التسجيل" } : lang === "fr" ? { name: "Votre nom complet", brand: "Marque", model: "Modèle", year: "Année", fuel: "Carburant", mileage: "Kilométrage", plate: "Immatriculation" } : { name: "Your full name", brand: "Make", model: "Model", year: "Year", fuel: "Fuel type", mileage: "Odometer", plate: "Plate number" };
+  return <div className="page first-setup-page"><div className="first-setup-intro"><div className="empty-icon"><CarFront size={30} /></div><p className="eyebrow">SAYARTI DZ</p><h1>{lang === "ar" ? "لنبدأ بإعداد سيارتك" : lang === "fr" ? "Configurons votre véhicule" : "Let’s set up your vehicle"}</h1><p>{lang === "ar" ? "أدخل معلوماتك الأساسية وسيارتك الأولى حتى تصبح لوحة القيادة جاهزة للاستخدام." : lang === "fr" ? "Ajoutez vos informations et votre premier véhicule pour activer votre tableau de bord." : "Add your details and first vehicle to activate your dashboard."}</p></div><section className="panel first-setup-card"><form onSubmit={event => { event.preventDefault(); onSubmit(values); }}><div className="form-grid"><Field label={label.name} name="name" value={values.name} set={set} required /><Field label={label.brand} name="brand" value={values.brand} set={set} required /><Field label={label.model} name="model" value={values.model} set={set} required /><Field label={label.year} name="year" value={values.year} set={set} type="number" required /><Field label={label.mileage} name="mileage" value={values.mileage} set={set} type="number" required /><Field label={label.plate} name="plateNumber" value={values.plateNumber} set={set} /><SelectField label={label.fuel} name="fuelType" value={values.fuelType} set={set} options={[["diesel", tr("diesel")], ["petrol", tr("petrol")], ["lpg", tr("lpg")], ["electric", tr("electric")]]} /></div><div className="modal-actions"><button className="primary-button" disabled={busy} type="submit">{busy ? <span className="spinner" /> : <CheckCircle2 size={17} />}{lang === "ar" ? "حفظ وبدء الاستخدام" : lang === "fr" ? "Enregistrer et commencer" : "Save and continue"}</button></div></form></section></div>;
+}
 
 function Dashboard({ data, currentVehicle, monthlySpend, nextDocument, lastFuel, lang, tr, onAdd, onPage, onVehicle, onEditVehicle }: { data?: AppData; currentVehicle?: AppData["vehicles"][number]; monthlySpend: number; nextDocument?: AppData["documents"][number]; lastFuel?: AppData["fuel"][number]; lang: Language; tr: (k: TranslationKey) => string; onAdd: (kind: Exclude<FormKind, null>) => void; onPage: (p: Page) => void; onVehicle: () => void; onEditVehicle: () => void }) {
   if (!currentVehicle) return <div className="empty-state full"><div className="empty-icon"><CarFront size={28} /></div><h2>{tr("noVehicle")}</h2><p>{tr("startByVehicle")}</p><button className="primary-button" onClick={onVehicle}><Plus size={18} />{tr("addVehicle")}</button></div>;

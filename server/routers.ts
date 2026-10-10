@@ -20,6 +20,7 @@ export const appRouter = router({
     data: protectedProcedure.query(({ ctx }) => db.getAppData(ctx.user.authUserId)),
     settings: protectedProcedure
       .input(z.object({
+        name: z.string().trim().min(2).max(200).nullable().optional(),
         language: z.enum(["ar", "fr", "en"]).optional(),
         theme: z.enum(["light", "dark"]).optional(),
         profileLink: z.string().url().max(2048).nullable().optional(),
