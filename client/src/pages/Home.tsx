@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -98,6 +98,7 @@ export default function Home() {
   const [form, setForm] = useState<FormState>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
   const [toast, setToast] = useState("");
+  const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
   const dataQuery = trpc.app.data.useQuery(undefined, { enabled: auth.isAuthenticated, retry: false });
   const utils = trpc.useUtils();
@@ -134,7 +135,15 @@ export default function Home() {
   }, [openAuth]);
   useEffect(() => {
     if (auth.isAuthenticated) { setAuthOpen(false); setDemoMode(false); }
+    else onboardingOpened.current = false;
   }, [auth.isAuthenticated]);
+  useEffect(() => {
+    // New accounts should land in a useful first step, not an empty dashboard.
+    if (auth.isAuthenticated && dataQuery.data && dataQuery.data.vehicles.length === 0 && !onboardingOpened.current) {
+      onboardingOpened.current = true;
+      openForm("vehicle");
+    }
+  }, [auth.isAuthenticated, dataQuery.data]);
 
   function showToast(message: string) { setToast(message); }
   function setLanguage(next: Language) { setLang(next); if (auth.isAuthenticated && !isDemo) settingsMutation.mutate({ language: next }); }

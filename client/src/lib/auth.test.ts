@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { authCopy, getAuthErrorMessage, validateAuthFields } from "./auth";
 
-const validFields = { email: "driver@example.com", password: "secret", confirmation: "secret" };
+const validFields = { name: "Driver", email: "driver@example.com", password: "secret", confirmation: "secret" };
 
 describe("auth validation", () => {
   it("requires a valid email and at least six password characters", () => {
-    expect(validateAuthFields({ email: "invalid", password: "12345", confirmation: "" }, "login", "en"))
+    expect(validateAuthFields({ name: "", email: "invalid", password: "12345", confirmation: "" }, "login", "en"))
       .toEqual({ email: authCopy.en.invalidEmail, password: authCopy.en.shortPassword });
     for (const email of ["", "name@", "@domain.test", "name@domain", "a b@domain.test", "a@@b.test"]) {
       expect(validateAuthFields({ ...validFields, email }, "login", "ar").email).toBe(authCopy.ar.invalidEmail);

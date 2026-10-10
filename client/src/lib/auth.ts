@@ -1,13 +1,14 @@
 import type { Language } from "@/lib/i18n";
 
 export type AuthMode = "login" | "signup";
-export type AuthFields = { email: string; password: string; confirmation: string };
+export type AuthFields = { name: string; email: string; password: string; confirmation: string };
 export type AuthFieldErrors = Partial<Record<keyof AuthFields, string>>;
 
 export const authCopy = {
   ar: {
     login: "تسجيل الدخول",
     signup: "إنشاء حساب",
+    name: "الاسم الكامل",
     description: "احفظ بيانات سيارتك بأمان باستخدام بريدك الإلكتروني وكلمة المرور.",
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
@@ -22,6 +23,7 @@ export const authCopy = {
     retry: "إعادة المحاولة",
     checkEmail: "تم إرسال طلب إنشاء الحساب. تحقق من بريدك، بما فيه الرسائل غير المرغوب فيها، لتأكيد الحساب ثم سجّل الدخول. إن كان لديك حساب بالفعل، استخدم كلمة المرور الصحيحة.",
     invalidEmail: "أدخل بريدًا إلكترونيًا صحيحًا، مثل name@example.com.",
+    invalidName: "أدخل اسمك حتى نخصص تجربتك.",
     shortPassword: "يجب ألا تقل كلمة المرور عن 6 أحرف.",
     mismatch: "كلمتا المرور غير متطابقتين.",
     invalidCredentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة. تحقق منهما وحاول مجددًا.",
@@ -36,6 +38,7 @@ export const authCopy = {
   en: {
     login: "Sign in",
     signup: "Create account",
+    name: "Full name",
     description: "Keep your car data safe with your email and password.",
     email: "Email address",
     password: "Password",
@@ -50,6 +53,7 @@ export const authCopy = {
     retry: "Try again",
     checkEmail: "Your account request was submitted. Check your inbox and spam folder to confirm your email, then sign in. If you already have an account, use your existing password.",
     invalidEmail: "Enter a valid email address, such as name@example.com.",
+    invalidName: "Enter your name so we can personalize your experience.",
     shortPassword: "Your password must contain at least 6 characters.",
     mismatch: "The passwords do not match.",
     invalidCredentials: "The email or password is incorrect. Check both and try again.",
@@ -64,6 +68,7 @@ export const authCopy = {
   fr: {
     login: "Connexion",
     signup: "Créer un compte",
+    name: "Nom complet",
     description: "Protégez les données de votre voiture avec votre e-mail et votre mot de passe.",
     email: "Adresse e-mail",
     password: "Mot de passe",
@@ -78,6 +83,7 @@ export const authCopy = {
     retry: "Réessayer",
     checkEmail: "Votre demande de compte a été envoyée. Consultez votre boîte de réception et vos courriers indésirables pour confirmer votre e-mail, puis connectez-vous. Si vous avez déjà un compte, utilisez votre mot de passe actuel.",
     invalidEmail: "Saisissez une adresse e-mail valide, par exemple name@example.com.",
+    invalidName: "Saisissez votre nom pour personnaliser votre expérience.",
     shortPassword: "Le mot de passe doit contenir au moins 6 caractères.",
     mismatch: "Les mots de passe ne correspondent pas.",
     invalidCredentials: "L’e-mail ou le mot de passe est incorrect. Vérifiez-les et réessayez.",
@@ -94,6 +100,7 @@ export const authCopy = {
 export function validateAuthFields(fields: AuthFields, mode: AuthMode, lang: Language): AuthFieldErrors {
   const copy = authCopy[lang];
   const errors: AuthFieldErrors = {};
+  if (mode === "signup" && fields.name.trim().length < 2) errors.name = copy.invalidName;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email.trim())) errors.email = copy.invalidEmail;
   // Never trim a password: leading/trailing spaces may be part of it.
   if (fields.password.length < 6) errors.password = copy.shortPassword;

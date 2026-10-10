@@ -15,13 +15,14 @@ export type AuthModalProps = {
 /** Mounted only while open, so closing never retains a password for the next visit. */
 export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>("login");
-  const [fields, setFields] = useState<AuthFields>({ email: "", password: "", confirmation: "" });
+  const [fields, setFields] = useState<AuthFields>({ name: "", email: "", password: "", confirmation: "" });
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [error, setError] = useState("");
   const [checkEmail, setCheckEmail] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const confirmationRef = useRef<HTMLInputElement>(null);
   const previousFocus = useRef(document.activeElement as HTMLElement | null);
@@ -44,7 +45,7 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
   function switchMode() {
     if (pending.current) return;
     setMode(current => current === "login" ? "signup" : "login");
-    setFields(current => ({ email: current.email, password: "", confirmation: "" }));
+    setFields(current => ({ name: current.name, email: current.email, password: "", confirmation: "" }));
     setVisible(false);
     setFieldErrors({});
     setError("");
@@ -59,7 +60,8 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
     const errors = validateAuthFields(fields, mode, lang);
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
-      if (errors.email) emailRef.current?.focus();
+      if (errors.name) nameRef.current?.focus();
+      else if (errors.email) emailRef.current?.focus();
       else if (errors.password) passwordRef.current?.focus();
       else confirmationRef.current?.focus();
       return;
@@ -78,6 +80,7 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
               // Supabase otherwise falls back to its dashboard Site URL,
               // which may still be localhost in development.
               emailRedirectTo: `${window.location.origin}/`,
+              data: { name: fields.name.trim() },
             },
           })
         : await client.auth.signInWithPassword(credentials);
@@ -86,7 +89,7 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
         setError(getAuthErrorMessage(authError, lang));
         return;
       }
-      setFields(current => ({ email: current.email.trim(), password: "", confirmation: "" }));
+      setFields(current => ({ name: current.name.trim(), email: current.email.trim(), password: "", confirmation: "" }));
       setVisible(false);
       if (data.session) onSuccess();
       else setCheckEmail(true);
@@ -127,6 +130,17 @@ export default function AuthModal({ lang, dark, onClose, onSuccess }: AuthModalP
             </div>
           ) : (
             <form className="auth-form" onSubmit={submit} noValidate aria-busy={busy}>
+              {signup && <div className="field">
+                <label htmlFor="auth-name">{copy.name}</label>
+                <input
+                  ref={nameRef} id="auth-name" name="name" className="text-input" type="text"
+                  autoComplete="name" required value={fields.name} disabled={busy}
+                  onChange={event => updateField("name", event.target.value)}
+                  aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? "auth-name-error" : undefined}
+                  placeholder={lang === "ar" ? "مثال: أحمد محمد" : "Your name"}
+                />
+                {fieldErrors.name && <p id="auth-name-error" className="auth-field-error" role="alert">{fieldErrors.name}</p>}
+              </div>}
               <div className="field">
                 <label htmlFor="auth-email">{copy.email}</label>
                 <input

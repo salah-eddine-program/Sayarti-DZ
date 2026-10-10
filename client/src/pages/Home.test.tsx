@@ -108,6 +108,7 @@ describe("Home authentication integration", () => {
     await enterDemo();
     await userEvent.click(screen.getAllByRole("button", { name: authCopy.en.login })[1]);
     await userEvent.click(screen.getByRole("button", { name: authCopy.en.signup }));
+    fireEvent.change(screen.getByLabelText(authCopy.en.name), { target: { value: "Driver" } });
     fillLogin();
     fireEvent.change(screen.getByLabelText(authCopy.en.confirmation), { target: { value: "password123" } });
     await userEvent.click(screen.getByRole("button", { name: authCopy.en.signup }));

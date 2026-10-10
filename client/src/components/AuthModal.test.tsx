@@ -24,6 +24,8 @@ function showModal(lang: "en" | "ar" | "fr" = "en", dark = false) {
 }
 
 function fill(email = "driver@example.com", password = "password123") {
+  const name = screen.queryByLabelText(authCopy.en.name);
+  if (name) fireEvent.change(name, { target: { value: "Driver" } });
   fireEvent.change(screen.getByLabelText(authCopy.en.email), { target: { value: email } });
   fireEvent.change(screen.getByLabelText(authCopy.en.password), { target: { value: password } });
 }
@@ -122,7 +124,7 @@ describe("AuthModal", () => {
     expect(auth.signUp).toHaveBeenCalledWith({
       email: "driver@example.com",
       password: "password123",
-      options: { emailRedirectTo: `${window.location.origin}/` },
+      options: { emailRedirectTo: `${window.location.origin}/`, data: { name: "Driver" } },
     });
     expect(screen.getByRole("status").textContent).toBe(authCopy.en.checkEmail);
     expect(onSuccess).not.toHaveBeenCalled();
