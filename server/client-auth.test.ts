@@ -6,74 +6,64 @@ const { signInWithPassword, signUp, signOut } = vi.hoisted(() => ({
 vi.mock("@/lib/supabase", () => ({
   requireSupabase: () => ({ auth: { signInWithPassword, signUp, signOut } }),
 }));
-import { startLogin, logout } from "../client/src/const";
+import { LOGIN_REQUEST_EVENT, startLogin, logout } from "../client/src/const";
 
+let dispatchEvent: ReturnType<typeof vi.fn>;
 let prompt: ReturnType<typeof vi.fn>;
 let confirm: ReturnType<typeof vi.fn>;
 let alert: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  vi.clearAllMocks();
-  signInWithPassword.mockResolvedValue({ error: null });
-  signUp.mockResolvedValue({ data: { session: null }, error: null });
+  vi.resetAllMocks();
   signOut.mockResolvedValue({ error: null });
-  prompt = vi.fn(); confirm = vi.fn(); alert = vi.fn();
-  vi.stubGlobal("window", { prompt, confirm, alert });
+  dispatchEvent = vi.fn(); prompt = vi.fn(); confirm = vi.fn(); alert = vi.fn();
+  vi.stubGlobal("window", { dispatchEvent, prompt, confirm, alert });
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("email/password login", () => {
-  it("signs in with a trimmed email without signing up or reloading", async () => {
-    prompt.mockReturnValueOnce(" user@example.com ").mockReturnValueOnce("test-password");
-    await startLogin();
-    expect(signInWithPassword).toHaveBeenCalledWith({ email: "user@example.com", password: "test-password" });
-    expect(signUp).not.toHaveBeenCalled();
-    expect(alert).not.toHaveBeenCalled();
-  });
-  it("does not contact auth when the prompt is cancelled", async () => {
-    prompt.mockReturnValueOnce(null);
-    await startLogin();
+describe("login UI gateway", () => {
+  it("opens UI through the supplied callback without starting an auth request", () => {
+    const openAuth = vi.fn();
+    startLogin(openAuth);
+    expect(openAuth).toHaveBeenCalledOnce();
+    expect(dispatchEvent).not.toHaveBeenCalled();
     expect(signInWithPassword).not.toHaveBeenCalled();
-  });
-  it("offers sign-up only with consent and confirmed password after invalid credentials", async () => {
-    prompt.mockReturnValueOnce("new@example.com").mockReturnValueOnce("test-password").mockReturnValueOnce("test-password");
-    signInWithPassword.mockResolvedValue({ error: { code: "invalid_credentials" } });
-    confirm.mockReturnValue(true);
-    await startLogin();
-    expect(signUp).toHaveBeenCalledWith({ email: "new@example.com", password: "test-password" });
-    expect(alert.mock.calls[0][0]).toContain("تحقق من بريدك");
-  });
-  it("never signs up automatically or on a rejected consent", async () => {
-    prompt.mockReturnValueOnce("user@example.com").mockReturnValueOnce("wrong-password");
-    signInWithPassword.mockResolvedValue({ error: { code: "invalid_credentials" } });
-    confirm.mockReturnValue(false);
-    await startLogin();
     expect(signUp).not.toHaveBeenCalled();
   });
-  it("rejects a different confirmation password", async () => {
-    prompt.mockReturnValueOnce("new@example.com").mockReturnValueOnce("test-password").mockReturnValueOnce("different-password");
-    signInWithPassword.mockResolvedValue({ error: { code: "user_not_found" } });
-    confirm.mockReturnValue(true);
-    await startLogin();
-    expect(signUp).not.toHaveBeenCalled();
-    expect(alert).toHaveBeenCalled();
-  });
-  it("does not propose sign-up for email-confirmation or rate-limit errors", async () => {
-    prompt.mockReturnValueOnce("user@example.com").mockReturnValueOnce("test-password");
-    signInWithPassword.mockResolvedValue({ error: { code: "email_not_confirmed", message: "Confirm your email" } });
-    await startLogin();
+
+  it("dispatches a UI request for legacy callers without prompting, confirming, or alerting", () => {
+    startLogin();
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent.mock.calls[0][0].type).toBe(LOGIN_REQUEST_EVENT);
+    expect(prompt).not.toHaveBeenCalled();
     expect(confirm).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+    expect(signInWithPassword).not.toHaveBeenCalled();
     expect(signUp).not.toHaveBeenCalled();
-    expect(alert).toHaveBeenCalledWith("Confirm your email");
   });
-  it("handles a network failure without an unhandled rejection", async () => {
-    prompt.mockReturnValueOnce("user@example.com").mockReturnValueOnce("test-password");
-    signInWithPassword.mockRejectedValue(new Error("private transport info"));
-    await expect(startLogin()).resolves.toBeUndefined();
-    expect(alert).toHaveBeenCalled();
-    expect(alert.mock.calls[0][0]).not.toContain("private transport info");
+
+  it("is safe without a browser and still supports a UI callback", () => {
+    vi.stubGlobal("window", undefined);
+    expect(() => startLogin()).not.toThrow();
+    const openAuth = vi.fn();
+    startLogin(openAuth);
+    expect(openAuth).toHaveBeenCalledOnce();
   });
+
+  it("can reopen the UI for a retry or after dismissal", () => {
+    const openAuth = vi.fn();
+    startLogin(openAuth);
+    startLogin(openAuth);
+    expect(openAuth).toHaveBeenCalledTimes(2);
+  });
+
   it("signs out the current local Supabase session", async () => {
     await logout();
     expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("propagates a sign-out failure to the existing auth hook", async () => {
+    const error = new Error("test sign-out failure");
+    signOut.mockResolvedValueOnce({ error });
+    await expect(logout()).rejects.toBe(error);
   });
 });

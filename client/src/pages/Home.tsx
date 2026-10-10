@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -22,7 +22,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { startLogin } from "@/const";
+import { LOGIN_REQUEST_EVENT, startLogin } from "@/const";
+import AuthModal from "@/components/AuthModal";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { languages, t, type Language, type TranslationKey } from "@/lib/i18n";
@@ -69,13 +70,13 @@ function Logo({ size = 52 }: { size?: number }) {
   return <img className="logo-mark" style={{ width: size, height: size }} src={`${import.meta.env.BASE_URL}assets/sayarti-mark.svg`} alt="Sayarti DZ" />;
 }
 
-function Landing({ lang, onLang, onDemo }: { lang: Language; onLang: (l: Language) => void; onDemo: () => void }) {
+function Landing({ lang, onLang, onDemo, onLogin }: { lang: Language; onLang: (l: Language) => void; onDemo: () => void; onLogin: () => void }) {
   const tr = (key: TranslationKey) => t(lang, key);
   return <main className="landing" dir={lang === "ar" ? "rtl" : "ltr"}>
     <div className="landing-glow" />
     <header className="landing-header"><div className="brand"><Logo size={48} /><div><strong>{tr("brand")}</strong><span>{tr("tagline")}</span></div></div><div className="landing-tools"><LanguageSelect value={lang} onChange={onLang} light /><button className="icon-button ghost" onClick={onDemo} aria-label={tr("demo")}><Sparkles size={18} /></button></div></header>
     <section className="hero">
-      <div className="hero-copy"><p className="eyebrow">{tr("brandDescription")}</p><h1>{tr("welcome")}</h1><p className="hero-subtitle">{tr("tagline")}</p><div className="hero-actions"><button className="primary-button" onClick={startLogin}><LogIn size={18} />{tr("loginCta")}</button><button className="secondary-button" onClick={onDemo}><Sparkles size={18} />{tr("useDemo")}</button></div><p className="safe-note"><ShieldCheck size={16} />{tr("signInToSave")}</p></div>
+      <div className="hero-copy"><p className="eyebrow">{tr("brandDescription")}</p><h1>{tr("welcome")}</h1><p className="hero-subtitle">{tr("tagline")}</p><div className="hero-actions"><button className="primary-button" onClick={onLogin}><LogIn size={18} />{tr("loginCta")}</button><button className="secondary-button" onClick={onDemo}><Sparkles size={18} />{tr("useDemo")}</button></div><p className="safe-note"><ShieldCheck size={16} />{tr("signInToSave")}</p></div>
       <div className="hero-card"><div className="hero-card-top"><span>{tr("sampleData")}</span><span className="status-pill ok"><CheckCircle2 size={14} />{tr("valid")}</span></div><div className="hero-car"><div className="gauge"><span>68%</span><small>{tr("vehicle")}</small></div><div><h2>Renault Clio 4</h2><p>2018 · Diesel</p><strong>185,200 <small>KM</small></strong></div></div><div className="hero-mini-grid"><div><Wrench size={16} /><span>{tr("nextService")}</span><b>1,200 {tr("km")}</b></div><div><CircleDollarSign size={16} /><span>{tr("monthlySpend")}</span><b>8,450 {lang === "ar" ? "دج" : "DZD"}</b></div></div><p className="demo-note">{tr("sampleNote")}</p></div>
     </section>
     <section className="landing-features"><div><Wrench /><strong>{tr("service")}</strong><span>{tr("serviceHistory")}</span></div><div><CircleDollarSign /><strong>{tr("expenses")}</strong><span>{tr("yearlySpend")}</span></div><div><FileText /><strong>{tr("documents")}</strong><span>{tr("reminders")}</span></div></section>
@@ -92,6 +93,7 @@ export default function Home() {
   const [lang, setLang] = useState<Language>("ar");
   const [dark, setDark] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const [formKind, setFormKind] = useState<FormKind>(null);
   const [form, setForm] = useState<FormState>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
@@ -110,6 +112,11 @@ export default function Home() {
   const data = (isDemo ? demo : dataQuery.data) as AppData | undefined;
   const currentVehicle = data?.vehicles?.find(v => v.id === selectedVehicleId) ?? data?.vehicles?.[0];
   const currentId = currentVehicle?.id;
+  const openAuth = useCallback(() => {
+    setFormKind(null);
+    setForm({});
+    startLogin(() => setAuthOpen(true));
+  }, []);
 
   useEffect(() => {
     const savedLang = localStorage.getItem("sayarti.language") as Language | null;
@@ -121,6 +128,13 @@ export default function Home() {
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("sayarti.theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { const user = data?.user; if (user?.language && languages.includes(user.language as Language)) setLang(user.language as Language); if (user?.theme === "dark") setDark(true); }, [data?.user]);
   useEffect(() => { if (toast) { const timer = window.setTimeout(() => setToast(""), 2600); return () => window.clearTimeout(timer); } }, [toast]);
+  useEffect(() => {
+    window.addEventListener(LOGIN_REQUEST_EVENT, openAuth);
+    return () => window.removeEventListener(LOGIN_REQUEST_EVENT, openAuth);
+  }, [openAuth]);
+  useEffect(() => {
+    if (auth.isAuthenticated) { setAuthOpen(false); setDemoMode(false); }
+  }, [auth.isAuthenticated]);
 
   function showToast(message: string) { setToast(message); }
   function setLanguage(next: Language) { setLang(next); if (auth.isAuthenticated && !isDemo) settingsMutation.mutate({ language: next }); }
@@ -148,10 +162,10 @@ export default function Home() {
   function closeForm() { setFormKind(null); setForm({}); }
   function field(name: string, value: string) { setForm(current => ({ ...current, [name]: value })); }
   function numberValue(name: string) { return Number(form[name] || 0); }
-  function requireVehicle() { if (!auth.isAuthenticated) { showToast(tr("signInToSave")); startLogin(); return false; } if (!currentId) { showToast(tr("noVehicle")); return false; } return true; }
+  function requireVehicle() { if (!auth.isAuthenticated) { showToast(tr("signInToSave")); openAuth(); return false; } if (!currentId) { showToast(tr("noVehicle")); return false; } return true; }
   function submitForm(event: React.FormEvent) {
     event.preventDefault();
-    if (!auth.isAuthenticated && !isDemo) { startLogin(); return; }
+    if (!auth.isAuthenticated && !isDemo) { openAuth(); return; }
     if (formKind === "vehicle") {
       if (!form.brand || !form.model || !form.year) return showToast(tr("required"));
       const value = { brand: form.brand, model: form.model, year: numberValue("year"), fuelType: (form.fuelType || "diesel") as "diesel" | "petrol" | "lpg" | "electric", mileage: numberValue("mileage"), plateNumber: form.plateNumber || undefined };
@@ -174,8 +188,9 @@ export default function Home() {
   }
   function profileLink() { return (data?.user?.profileLink || (isDemo ? localStorage.getItem("sayarti.profileLink") : null) || PROFILE_DEFAULT); }
 
-  if (auth.loading && !demoMode) return <div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>;
-  if (!auth.isAuthenticated && !demoMode) return <Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} />;
+  const authModal = authOpen && <AuthModal lang={lang} dark={dark} onClose={() => setAuthOpen(false)} onSuccess={() => { setAuthOpen(false); setDemoMode(false); closeForm(); setSelectedVehicleId(undefined); }} />;
+  if (auth.loading && !demoMode) return <><div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>{authModal}</>;
+  if (!auth.isAuthenticated && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
 
   const busy = vehicleCreate.isPending || vehicleUpdate.isPending || maintenanceCreate.isPending || expenseCreate.isPending || fuelCreate.isPending || documentCreate.isPending;
   const monthlySpend = (data?.expenses ?? []).reduce((sum, item) => sum + item.amount, 0) + (data?.maintenance ?? []).reduce((sum, item) => sum + item.cost, 0);
@@ -184,8 +199,8 @@ export default function Home() {
   const nextDocument = data?.documents?.find(d => (daysUntil(d.expiresOn) ?? 9999) >= 0);
   const mutationError = [vehicleCreate, vehicleUpdate, maintenanceCreate, expenseCreate, fuelCreate, documentCreate].find(m => m.error)?.error;
   return <div className={`app-shell ${dark ? "theme-dark" : ""}`} dir={lang === "ar" ? "rtl" : "ltr"}>
-    <aside className="sidebar"><div className="brand"><Logo size={44} /><div><strong>{tr("brand")}</strong><span>{tr("tagline")}</span></div></div><nav>{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "fuel", icon: Fuel, key: "fuel" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</nav><div className="sidebar-bottom"><div className="sidebar-profile"><div className="avatar">{(data?.user?.name || "S").slice(0, 1).toUpperCase()}</div><div><strong>{data?.user?.name || tr("sampleData")}</strong><span>{isDemo ? tr("sampleData") : data?.user?.email || ""}</span></div></div>{isDemo ? <button className="sidebar-login" onClick={startLogin}><LogIn size={16} />{tr("login")}</button> : <button className="sidebar-login" onClick={() => auth.logout()}><LogOut size={16} />{tr("logout")}</button>}</div></aside>
-    <main className="content"><header className="topbar"><div className="mobile-brand"><Logo size={38} /><strong>{tr("brand")}</strong></div><div className="topbar-actions"><LanguageSelect value={lang} onChange={setLanguage} /><button className="icon-button" onClick={() => setTheme(!dark)} aria-label={tr("theme")}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="menu-button"><Menu size={20} /></button></div></header>{isDemo && <div className="demo-banner"><Sparkles size={16} /><span><b>{tr("sampleData")}</b> — {tr("sampleNote")}</span><button onClick={startLogin}>{tr("login")}</button></div>}{mutationError && <div className="error-banner"><AlertTriangle size={16} />{mutationError.message}</div>}
+    <aside className="sidebar"><div className="brand"><Logo size={44} /><div><strong>{tr("brand")}</strong><span>{tr("tagline")}</span></div></div><nav>{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "fuel", icon: Fuel, key: "fuel" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</nav><div className="sidebar-bottom"><div className="sidebar-profile"><div className="avatar">{(data?.user?.name || "S").slice(0, 1).toUpperCase()}</div><div><strong>{data?.user?.name || tr("sampleData")}</strong><span>{isDemo ? tr("sampleData") : data?.user?.email || ""}</span></div></div>{isDemo ? <button className="sidebar-login" onClick={openAuth}><LogIn size={16} />{tr("login")}</button> : <button className="sidebar-login" onClick={() => auth.logout()}><LogOut size={16} />{tr("logout")}</button>}</div></aside>
+    <main className="content"><header className="topbar"><div className="mobile-brand"><Logo size={38} /><strong>{tr("brand")}</strong></div><div className="topbar-actions"><LanguageSelect value={lang} onChange={setLanguage} /><button className="icon-button" onClick={() => setTheme(!dark)} aria-label={tr("theme")}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="menu-button"><Menu size={20} /></button></div></header>{isDemo && <div className="demo-banner"><Sparkles size={16} /><span><b>{tr("sampleData")}</b> — {tr("sampleNote")}</span><button onClick={openAuth}>{tr("login")}</button></div>}{mutationError && <div className="error-banner"><AlertTriangle size={16} />{mutationError.message}</div>}
       {page === "home" && <Dashboard data={data} currentVehicle={currentVehicle} monthlySpend={monthlySpend} nextDocument={nextDocument} lastFuel={lastFuel} lang={lang} tr={tr} onAdd={openForm} onPage={setPage} onVehicle={() => openForm("vehicle")} onEditVehicle={() => openForm("vehicle", currentVehicle)} />}
       {page === "service" && <RecordsPage type="service" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("maintenance")} />}
       {page === "expenses" && <RecordsPage type="expenses" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("expense")} />}
@@ -195,6 +210,7 @@ export default function Home() {
     </main>
     <div className="mobile-nav">{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</div>
     {formKind && <Modal kind={formKind} form={form} setForm={field} tr={tr} onClose={closeForm} onSubmit={submitForm} busy={busy} />}
+    {authModal}
     {toast && <div className="toast"><CheckCircle2 size={17} />{toast}</div>}
   </div>;
 }
