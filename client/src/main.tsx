@@ -9,6 +9,8 @@ import { startLogin } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+const isGithubPages = typeof window !== "undefined" && window.location.hostname.endsWith(".github.io");
+const apiOrigin = import.meta.env.VITE_API_ORIGIN || (isGithubPages ? "https://sayarti-dz.onrender.com" : "");
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (error instanceof TRPCClientError && error.data?.code === "UNAUTHORIZED") {
@@ -41,7 +43,7 @@ supabase?.auth.onAuthStateChange((_event, session) => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: `${apiOrigin}/api/trpc`,
       transformer: superjson,
       async headers() {
         // getSession refreshes expiring tokens; the server independently validates
