@@ -3,6 +3,7 @@ export * from "./_core/errors";
 export type AppUserRow = {
   id: number;
   auth_user_id: string;
+  open_id: string;
   name: string | null;
   email: string | null;
   login_method: string | null;

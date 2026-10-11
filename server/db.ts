@@ -26,6 +26,7 @@ export async function upsertUser(authUser: AuthUser): Promise<User> {
   const metadataName = authUser.user_metadata?.name ?? authUser.user_metadata?.full_name;
   const values: Database["public"]["Tables"]["app_users"]["Insert"] = {
     auth_user_id: authUser.id,
+    open_id: authUser.id,
     email: authUser.email ?? null,
     name: typeof metadataName === "string" ? metadataName.slice(0, 200) : null,
     login_method: "email",
