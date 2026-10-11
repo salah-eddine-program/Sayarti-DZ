@@ -12,6 +12,13 @@ const queryClient = new QueryClient();
 const isGithubPages = typeof window !== "undefined" && window.location.hostname.endsWith(".github.io");
 const apiOrigin = import.meta.env.VITE_API_ORIGIN || (isGithubPages ? "https://sayarti-dz.onrender.com" : "");
 
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  });
+}
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (error instanceof TRPCClientError && error.data?.code === "UNAUTHORIZED") {
     void startLogin();
