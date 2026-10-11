@@ -1,0 +1,17 @@
+name: Keep Render warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping Render health endpoint
+        run: curl --fail --silent --show-error --retry 2 --retry-delay 5 --max-time 30 https://sayarti-dz.onrender.com/api/health
