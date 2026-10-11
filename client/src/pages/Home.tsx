@@ -277,7 +277,7 @@ export default function Home() {
   }
 
   const authModal = authOpen && <AuthModal lang={lang} dark={dark} onClose={() => setAuthOpen(false)} onSuccess={() => { setAuthOpen(false); setDemoMode(false); closeForm(); setSelectedVehicleId(undefined); }} />;
-  if ((auth.loading || (hasSession && dataQuery.isLoading)) && !demoMode) return <><div className="loading-screen"><Logo size={66} /><span>{tr("brand")}</span></div>{authModal}</>;
+  if ((auth.loading || (hasSession && dataQuery.isLoading)) && !demoMode) return <><div className="loading-screen"><div className="loading-scene" aria-hidden="true"><div className="loading-road" /><div className="loading-car loading-car-one"><CarFront size={42} /></div><div className="loading-car loading-car-two"><CarFront size={29} /></div><div className="loading-car loading-car-three"><CarFront size={35} /></div></div><div className="loading-content"><Logo size={66} /><strong>{tr("brand")}</strong><span>{lang === "ar" ? "نجهّز لوحة سيارتك…" : lang === "fr" ? "Préparation de votre tableau de bord…" : "Preparing your dashboard…"}</span><i className="loading-dots" /></div></div>{authModal}</>;
   if (!hasSession && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
 
   const busy = vehicleCreate.isPending || vehicleUpdate.isPending || maintenanceCreate.isPending || expenseCreate.isPending || fuelCreate.isPending || documentCreate.isPending;
