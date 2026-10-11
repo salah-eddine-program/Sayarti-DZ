@@ -119,6 +119,15 @@ export default function Home() {
   const hasSession = Boolean(auth.session);
   const dataQuery = trpc.app.data.useQuery(undefined, { enabled: hasSession, retry: false });
   const utils = trpc.useUtils();
+  function saveLocalFallback(update: (data: AppData) => AppData, message: string) {
+    if (!setupData?.vehicles.some(vehicle => vehicle.id < 0)) return false;
+    const next = update(setupData);
+    setSetupData(next);
+    localStorage.setItem(LOCAL_SETUP_KEY, JSON.stringify(next));
+    closeForm();
+    showToast(message);
+    return true;
+  }
   const settingsMutation = trpc.app.settings.useMutation({ onSuccess: () => { dataQuery.refetch(); showToast(tr("profileSaved")); } });
   const vehicleCreate = trpc.app.vehicle.create.useMutation({
     onSuccess: (result) => { localStorage.removeItem(LOCAL_SETUP_KEY); setupFallback.current = undefined; setSetupError(""); setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
@@ -134,11 +143,26 @@ export default function Home() {
       }
     },
   });
-  const vehicleUpdate = trpc.app.vehicle.update.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
-  const maintenanceCreate = trpc.app.maintenance.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); } });
-  const expenseCreate = trpc.app.expense.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("expenseSaved")); } });
-  const fuelCreate = trpc.app.fuel.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("fuelSaved")); } });
-  const documentCreate = trpc.app.document.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); } });
+  const vehicleUpdate = trpc.app.vehicle.update.useMutation({
+    onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, vehicles: data.vehicles.map(vehicle => vehicle.id === values.id ? { ...vehicle, ...values, plateNumber: values.plateNumber ?? null } : vehicle) }), tr("carSaved"))) showToast(tr("required")); },
+  });
+  const maintenanceCreate = trpc.app.maintenance.create.useMutation({
+    onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, maintenance: [...data.maintenance, { id: -Date.now(), ...values, notes: values.notes ?? null, invoiceUrl: null }] }), tr("serviceSaved"))) showToast(tr("required")); },
+  });
+  const expenseCreate = trpc.app.expense.create.useMutation({
+    onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("expenseSaved")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, expenses: [...data.expenses, { id: -Date.now(), ...values }] }), tr("expenseSaved"))) showToast(tr("required")); },
+  });
+  const fuelCreate = trpc.app.fuel.create.useMutation({
+    onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("fuelSaved")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, fuel: [...data.fuel, { id: -Date.now(), ...values }] }), tr("fuelSaved"))) showToast(tr("required")); },
+  });
+  const documentCreate = trpc.app.document.create.useMutation({
+    onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, documents: [...data.documents, { id: -Date.now(), ...values, expiresOn: values.expiresOn ?? null, fileUrl: null }] }), tr("documentSaved"))) showToast(tr("required")); },
+  });
   const isDemo = !hasSession && demoMode;
   const data = (isDemo ? demo : (setupData ?? dataQuery.data)) as AppData | undefined;
   const currentVehicle = data?.vehicles?.find(v => v.id === selectedVehicleId) ?? data?.vehicles?.[0];
