@@ -31,7 +31,7 @@ export const appRouter = router({
         .input(z.object({
           brand: z.string().trim().min(1).max(80),
           model: z.string().trim().min(1).max(80),
-          year: z.number().int().min(1900).max(new Date().getFullYear() + 1),
+          year: z.number().int().min(1900).max(2100),
           fuelType: z.enum(["diesel", "petrol", "lpg", "electric"]),
           mileage: z.number().int().min(0).max(10_000_000),
           plateNumber: z.string().trim().max(32).optional(),
@@ -45,7 +45,7 @@ export const appRouter = router({
           id: vehicleId,
           brand: z.string().trim().min(1).max(80).optional(),
           model: z.string().trim().min(1).max(80).optional(),
-          year: z.number().int().min(1900).max(new Date().getFullYear() + 1).optional(),
+          year: z.number().int().min(1900).max(2100).optional(),
           fuelType: z.enum(["diesel", "petrol", "lpg", "electric"]).optional(),
           mileage: z.number().int().min(0).max(10_000_000).optional(),
           plateNumber: z.string().trim().max(32).nullable().optional(),
