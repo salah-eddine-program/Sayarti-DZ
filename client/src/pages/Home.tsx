@@ -29,6 +29,7 @@ import { trpc } from "@/lib/trpc";
 import { languages, t, type Language, type TranslationKey } from "@/lib/i18n";
 
 const PROFILE_DEFAULT = "https://salah-eddine-program.github.io/bt-salahdine.com/";
+const LOCAL_SETUP_KEY = "sayarti.pending-setup";
 const demo = {
   vehicles: [{ id: 1, brand: "Renault", model: "Clio 4", year: 2018, fuelType: "diesel", mileage: 185200, plateNumber: "" }],
   maintenance: [{ id: 1, vehicleId: 1, title: "Oil change", serviceDate: "2026-10-08", mileage: 185200, cost: 6500, notes: "Oil and filters changed" }],
@@ -100,6 +101,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupData, setSetupData] = useState<AppData | undefined>();
+  const setupFallback = useRef<AppData | undefined>();
   const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
   const hasSession = Boolean(auth.session);
@@ -107,8 +109,18 @@ export default function Home() {
   const utils = trpc.useUtils();
   const settingsMutation = trpc.app.settings.useMutation({ onSuccess: () => { dataQuery.refetch(); showToast(tr("profileSaved")); } });
   const vehicleCreate = trpc.app.vehicle.create.useMutation({
-    onSuccess: (result) => { setSetupError(""); setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
-    onError: () => setSetupError(lang === "ar" ? "تعذر حفظ السيارة. تحقق من تسجيل الدخول والاتصال ثم حاول مرة أخرى." : lang === "fr" ? "Impossible d’enregistrer le véhicule. Vérifiez la connexion puis réessayez." : "The vehicle could not be saved. Check your connection and try again."),
+    onSuccess: (result) => { localStorage.removeItem(LOCAL_SETUP_KEY); setupFallback.current = undefined; setSetupError(""); setSetupData(result as AppData); dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
+    onError: () => {
+      if (setupFallback.current) {
+        setSetupError("");
+        setSetupData(setupFallback.current);
+        localStorage.setItem(LOCAL_SETUP_KEY, JSON.stringify(setupFallback.current));
+        closeForm();
+        showToast(lang === "ar" ? "تم فتح التطبيق بالبيانات التي أدخلتها" : lang === "fr" ? "L’application est ouverte avec vos données" : "The app is open with your entered data");
+      } else {
+        setSetupError(lang === "ar" ? "تعذر حفظ السيارة. تحقق من تسجيل الدخول والاتصال ثم حاول مرة أخرى." : lang === "fr" ? "Impossible d’enregistrer le véhicule. Vérifiez la connexion puis réessayez." : "The vehicle could not be saved. Check your connection and try again.");
+      }
+    },
   });
   const vehicleUpdate = trpc.app.vehicle.update.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); } });
   const maintenanceCreate = trpc.app.maintenance.create.useMutation({ onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); } });
@@ -146,6 +158,10 @@ export default function Home() {
   useEffect(() => {
     // New accounts should land in a useful first step, not an empty dashboard.
     if (auth.isAuthenticated && dataQuery.data && dataQuery.data.vehicles.length === 0 && !onboardingOpened.current) {
+      try {
+        const saved = localStorage.getItem(LOCAL_SETUP_KEY);
+        if (saved) setSetupData(JSON.parse(saved) as AppData);
+      } catch { /* ignore malformed local fallback */ }
       onboardingOpened.current = true;
       openForm("vehicle");
     }
@@ -210,6 +226,12 @@ export default function Home() {
       return;
     }
     setSetupError("");
+    const fallback: AppData = {
+      user: { name, email: auth.session?.user.email ?? "", language: lang, theme: dark ? "dark" : "light", profileLink: PROFILE_DEFAULT, plan: "free", premiumExpiresAt: null },
+      vehicles: [{ id: -Date.now(), brand: values.brand.trim(), model: values.model.trim(), year: Number(values.year), fuelType: values.fuelType as "diesel" | "petrol" | "lpg" | "electric", mileage: Number(values.mileage), plateNumber: values.plateNumber.trim() }],
+      maintenance: [], expenses: [], fuel: [], documents: [],
+    };
+    setupFallback.current = fallback;
     settingsMutation.mutate({ name });
     vehicleCreate.mutate({
       brand: values.brand.trim(), model: values.model.trim(), year: Number(values.year),
