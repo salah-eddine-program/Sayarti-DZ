@@ -113,7 +113,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupData, setSetupData] = useState<AppData | undefined>();
-  const setupFallback = useRef<AppData | undefined>();
+  const setupFallback = useRef<AppData | undefined>(undefined);
   const onboardingOpened = useRef(false);
   const tr = (key: TranslationKey) => t(lang, key);
   const hasSession = Boolean(auth.session);
@@ -145,11 +145,11 @@ export default function Home() {
   });
   const vehicleUpdate = trpc.app.vehicle.update.useMutation({
     onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("carSaved")); },
-    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, vehicles: data.vehicles.map(vehicle => vehicle.id === values.id ? { ...vehicle, ...values, plateNumber: values.plateNumber ?? null } : vehicle) }), tr("carSaved"))) showToast(tr("required")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, vehicles: data.vehicles.map(vehicle => vehicle.id === values.id ? { ...vehicle, ...values, plateNumber: values.plateNumber ?? "" } : vehicle) }), tr("carSaved"))) showToast(tr("required")); },
   });
   const maintenanceCreate = trpc.app.maintenance.create.useMutation({
     onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("serviceSaved")); },
-    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, maintenance: [...data.maintenance, { id: -Date.now(), ...values, notes: values.notes ?? null, invoiceUrl: null }] }), tr("serviceSaved"))) showToast(tr("required")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, maintenance: [...data.maintenance, { id: -Date.now(), ...values, notes: values.notes ?? "" }] }), tr("serviceSaved"))) showToast(tr("required")); },
   });
   const expenseCreate = trpc.app.expense.create.useMutation({
     onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("expenseSaved")); },
@@ -277,7 +277,7 @@ export default function Home() {
   }
 
   const authModal = authOpen && <AuthModal lang={lang} dark={dark} onClose={() => setAuthOpen(false)} onSuccess={() => { setAuthOpen(false); setDemoMode(false); closeForm(); setSelectedVehicleId(undefined); }} />;
-  if ((auth.loading || (hasSession && dataQuery.isLoading)) && !demoMode) return <><div className="loading-screen"><div className="loading-scene" aria-hidden="true"><div className="loading-road" /><div className="loading-car loading-car-one"><CarFront size={42} /></div><div className="loading-car loading-car-two"><CarFront size={29} /></div><div className="loading-car loading-car-three"><CarFront size={35} /></div></div><div className="loading-content"><Logo size={66} /><strong>{tr("brand")}</strong><span>{lang === "ar" ? "نجهّز لوحة سيارتك…" : lang === "fr" ? "Préparation de votre tableau de bord…" : "Preparing your dashboard…"}</span><i className="loading-dots" /></div></div>{authModal}</>;
+  if ((auth.loading || (hasSession && dataQuery.isLoading)) && !demoMode) return <><div className="loading-screen"><div className="loading-scene" aria-hidden="true"><div className="loading-grid" /><div className="loading-horizon" /><div className="loading-road"><span className="loading-lane" /></div><div className="loading-vehicle"><CarFront size={34} /></div></div><div className="loading-content"><div className="loading-kicker">SMART CAR CARE</div><div className="loading-logo-wrap"><Logo size={58} /></div><strong>{tr("brand")}</strong><span>{lang === "ar" ? "نجهّز لوحة سيارتك…" : lang === "fr" ? "Préparation de votre tableau de bord…" : "Preparing your dashboard…"}</span><div className="loading-progress"><i /></div><small>YOUR JOURNEY. BETTER MANAGED.</small></div></div>{authModal}</>;
   if (!hasSession && !demoMode) return <><Landing lang={lang} onLang={setLanguage} onDemo={() => setDemoMode(true)} onLogin={openAuth} />{authModal}</>;
 
   const busy = vehicleCreate.isPending || vehicleUpdate.isPending || maintenanceCreate.isPending || expenseCreate.isPending || fuelCreate.isPending || documentCreate.isPending;
