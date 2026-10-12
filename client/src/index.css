@@ -102,9 +102,9 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 @keyframes lanePulse { 0%, 100% { opacity: .25; transform: translateX(-50%) scaleX(.45); } 50% { opacity: 1; transform: translateX(-50%) scaleX(1); } }
 @keyframes vehicleCruise { 0% { transform: translateX(0) scale(.7); opacity: 0; } 15% { opacity: .8; } 50% { transform: translateX(58vw) scale(1); opacity: .75; } 85% { opacity: .35; } 100% { transform: translateX(115vw) scale(1.22); opacity: 0; } }
 @keyframes progressFlow { 0% { transform: translateX(-150%); } 100% { transform: translateX(360%); } }
-:root:not([data-theme="dark"]) .loading-screen { background: linear-gradient(180deg, #edf8f4 0%, #f9fcfb 58%, #dcece6 100%); color: #0b3d46; }
-:root:not([data-theme="dark"]) .loading-screen::before { background: radial-gradient(circle at 50% 42%, rgba(19,184,137,.16), transparent 27%), linear-gradient(115deg, rgba(238,249,245,.92), transparent 48%, rgba(14,119,108,.12)); }
-:root:not([data-theme="dark"]) .loading-content { background: rgba(255,255,255,.86); border-color: rgba(11,61,70,.13); box-shadow: 0 24px 70px rgba(11,61,70,.16), inset 0 1px rgba(255,255,255,.95); }
+:root:not([data-theme="dark"]) .loading-screen { background: linear-gradient(180deg, #cfe2dd 0%, #e3eee9 58%, #b8d1ca 100%); color: #0b3d46; }
+:root:not([data-theme="dark"]) .loading-screen::before { background: radial-gradient(circle at 50% 42%, rgba(19,184,137,.2), transparent 27%), linear-gradient(115deg, rgba(207,226,221,.92), transparent 48%, rgba(14,119,108,.18)); }
+:root:not([data-theme="dark"]) .loading-content { background: rgba(230,242,238,.92); border-color: rgba(11,61,70,.18); box-shadow: 0 24px 70px rgba(11,61,70,.2), inset 0 1px rgba(255,255,255,.8); }
 :root:not([data-theme="dark"]) .loading-content > span { color: #4e696c; }.loading-content small { font-weight: 700; }
 :root:not([data-theme="dark"]) .loading-content small { color: #557b78; }.loading-logo-wrap { color: #fff; }
 @media (prefers-reduced-motion: reduce) { .loading-grid, .loading-lane, .loading-vehicle, .loading-progress i { animation: none; } }
