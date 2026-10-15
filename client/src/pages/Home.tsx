@@ -14,11 +14,13 @@ import {
   LogOut,
   Menu,
   Moon,
+  Pencil,
   Plus,
   Settings2,
   ShieldCheck,
   Sparkles,
   Sun,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
@@ -111,6 +113,9 @@ export default function Home() {
   const [form, setForm] = useState<FormState>({});
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
   const [toast, setToast] = useState("");
+  const [readDocuments, setReadDocuments] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem("sayarti.read-documents") || "{}"); } catch { return {}; }
+  });
   const [setupError, setSetupError] = useState("");
   const [setupData, setSetupData] = useState<AppData | undefined>();
   const setupFallback = useRef<AppData | undefined>(undefined);
@@ -163,6 +168,15 @@ export default function Home() {
     onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); },
     onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, documents: [...data.documents, { id: -Date.now(), ...values, expiresOn: values.expiresOn ?? null, fileUrl: null }] }), tr("documentSaved"))) showToast(tr("required")); },
   });
+  const safeMutation = (procedure: { useMutation?: (options: { onSuccess: () => void }) => { mutate: (value: never) => void } } | undefined, options: { onSuccess: () => void }) => procedure?.useMutation ? procedure.useMutation(options) : { mutate: () => undefined };
+  const maintenanceUpdate = safeMutation(trpc.app.maintenance.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
+  const expenseUpdate = safeMutation(trpc.app.expense.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
+  const fuelUpdate = safeMutation(trpc.app.fuel.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
+  const documentUpdate = safeMutation(trpc.app.document.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
+  const maintenanceDelete = safeMutation(trpc.app.maintenance.delete, { onSuccess: () => { dataQuery.refetch(); showToast(tr("deleted")); } });
+  const expenseDelete = safeMutation(trpc.app.expense.delete, { onSuccess: () => { dataQuery.refetch(); showToast(tr("deleted")); } });
+  const fuelDelete = safeMutation(trpc.app.fuel.delete, { onSuccess: () => { dataQuery.refetch(); showToast(tr("deleted")); } });
+  const documentDelete = safeMutation(trpc.app.document.delete, { onSuccess: () => { dataQuery.refetch(); showToast(tr("deleted")); } });
   const isDemo = !hasSession && demoMode;
   const data = (isDemo ? demo : (setupData ?? dataQuery.data)) as AppData | undefined;
   const currentVehicle = data?.vehicles?.find(v => v.id === selectedVehicleId) ?? data?.vehicles?.[0];
@@ -242,10 +256,10 @@ export default function Home() {
     }
     if (!requireVehicle()) return;
     if (isDemo) { closeForm(); showToast(tr("saved")); return; }
-    if (formKind === "maintenance") maintenanceCreate.mutate({ vehicleId: currentId!, title: form.title || tr("oilChange"), serviceDate: form.date || today(), mileage: numberValue("mileage"), cost: numberValue("amount"), notes: form.notes || undefined });
-    if (formKind === "expense") expenseCreate.mutate({ vehicleId: currentId!, title: form.title || tr("other"), category: (form.category || "other") as "service" | "fuel" | "parts" | "other", amount: numberValue("amount"), expenseDate: form.date || today() });
-    if (formKind === "fuel") fuelCreate.mutate({ vehicleId: currentId!, amount: numberValue("amount"), liters: numberValue("liters"), pricePerLiter: Math.round(numberValue("pricePerLiter") * 100), mileage: numberValue("mileage"), fuelDate: form.date || today() });
-    if (formKind === "document") documentCreate.mutate({ vehicleId: currentId!, title: form.title || tr("documents"), expiresOn: form.expiresOn || null });
+    if (formKind === "maintenance") { const value = { title: form.title || tr("oilChange"), serviceDate: form.date || today(), mileage: numberValue("mileage"), cost: numberValue("amount"), notes: form.notes || undefined }; form.id ? maintenanceUpdate.mutate({ id: Number(form.id), ...value }) : maintenanceCreate.mutate({ vehicleId: currentId!, ...value }); }
+    if (formKind === "expense") { const value = { title: form.title || tr("other"), category: (form.category || "other") as "service" | "fuel" | "parts" | "other", amount: numberValue("amount"), expenseDate: form.date || today() }; form.id ? expenseUpdate.mutate({ id: Number(form.id), ...value }) : expenseCreate.mutate({ vehicleId: currentId!, ...value }); }
+    if (formKind === "fuel") { const value = { amount: numberValue("amount"), liters: numberValue("liters"), pricePerLiter: Math.round(numberValue("pricePerLiter") * 100), mileage: numberValue("mileage"), fuelDate: form.date || today() }; form.id ? fuelUpdate.mutate({ id: Number(form.id), ...value }) : fuelCreate.mutate({ vehicleId: currentId!, ...value }); }
+    if (formKind === "document") { const value = { title: form.title || tr("documents"), expiresOn: form.expiresOn || null }; form.id ? documentUpdate.mutate({ id: Number(form.id), ...value }) : documentCreate.mutate({ vehicleId: currentId!, ...value }); }
   }
   function saveProfileLink() {
     const value = form.profileLink?.trim() ?? "";
@@ -254,6 +268,19 @@ export default function Home() {
     if (auth.isAuthenticated) settingsMutation.mutate({ profileLink: value || null }); else showToast(tr("signInToSave"));
   }
   function profileLink() { return (data?.user?.profileLink || (isDemo ? localStorage.getItem("sayarti.profileLink") : null) || PROFILE_DEFAULT); }
+  function deleteRecord(type: "service" | "expenses" | "fuel" | "documents", id: number) {
+    if (!auth.isAuthenticated || isDemo) { showToast(tr("signInToSave")); return; }
+    if (type === "service") maintenanceDelete.mutate({ id });
+    if (type === "expenses") expenseDelete.mutate({ id });
+    if (type === "fuel") fuelDelete.mutate({ id });
+    if (type === "documents") documentDelete.mutate({ id });
+  }
+  function markDocumentRead(id: number) {
+    const next = { ...readDocuments, [id]: true };
+    setReadDocuments(next);
+    localStorage.setItem("sayarti.read-documents", JSON.stringify(next));
+    showToast(tr("markedRead"));
+  }
 
   function completeFirstSetup(values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) {
     const name = values.name.trim();
@@ -295,10 +322,10 @@ export default function Home() {
     <aside className="sidebar"><div className="brand"><Logo size={44} /><div><strong>{tr("brand")}</strong><span>{tr("tagline")}</span></div></div><nav>{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "fuel", icon: Fuel, key: "fuel" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</nav><div className="sidebar-bottom"><div className="sidebar-profile"><div className="avatar">{(data?.user?.name || "S").slice(0, 1).toUpperCase()}</div><div><strong>{data?.user?.name || tr("sampleData")}</strong><span>{isDemo ? tr("sampleData") : data?.user?.email || ""}</span></div></div>{isDemo ? <button className="sidebar-login" onClick={openAuth}><LogIn size={16} />{tr("login")}</button> : <button className="sidebar-login" onClick={() => auth.logout()}><LogOut size={16} />{tr("logout")}</button>}</div></aside>
     <main className="content"><header className="topbar"><div className="mobile-brand"><Logo size={38} /><strong>{tr("brand")}</strong></div><div className="topbar-actions"><LanguageSelect value={lang} onChange={setLanguage} /><button className="icon-button" onClick={() => setTheme(!dark)} aria-label={tr("theme")}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="menu-button"><Menu size={20} /></button></div></header>{isDemo && <div className="demo-banner"><Sparkles size={16} /><span><b>{tr("sampleData")}</b> — {tr("sampleNote")}</span><button onClick={openAuth}>{tr("login")}</button></div>}
       {page === "home" && <Dashboard data={data} currentVehicle={currentVehicle} monthlySpend={monthlySpend} nextDocument={nextDocument} lastFuel={lastFuel} lang={lang} tr={tr} onAdd={openForm} onPage={setPage} onVehicle={() => openForm("vehicle")} onEditVehicle={() => openForm("vehicle", currentVehicle)} />}
-      {page === "service" && <RecordsPage type="service" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("maintenance")} />}
-      {page === "expenses" && <RecordsPage type="expenses" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("expense")} />}
-      {page === "fuel" && <RecordsPage type="fuel" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("fuel")} />}
-      {page === "documents" && <RecordsPage type="documents" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("document")} />}
+      {page === "service" && <RecordsPage type="service" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("maintenance")} onEdit={item => openForm("maintenance", item)} onDelete={id => deleteRecord("service", id)} />}
+      {page === "expenses" && <RecordsPage type="expenses" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("expense")} onEdit={item => openForm("expense", item)} onDelete={id => deleteRecord("expenses", id)} />}
+      {page === "fuel" && <RecordsPage type="fuel" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("fuel")} onEdit={item => openForm("fuel", item)} onDelete={id => deleteRecord("fuel", id)} />}
+      {page === "documents" && <RecordsPage type="documents" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("document")} onEdit={item => openForm("document", item)} onDelete={id => deleteRecord("documents", id)} readDocuments={readDocuments} onRead={markDocumentRead} />}
       {page === "settings" && <Settings data={data} lang={lang} tr={tr} isDemo={isDemo} onLanguage={setLanguage} dark={dark} onTheme={setTheme} profileLink={profileLink()} onSaveLink={saveProfileLink} onProfileField={value => field("profileLink", value)} />}
     </main>
     <div className="mobile-nav">{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</div>
@@ -325,14 +352,15 @@ function Dashboard({ data, currentVehicle, monthlySpend, nextDocument, lastFuel,
 }
 
 function StatCard({ icon: Icon, label, value, unit, tone, onClick }: { icon: typeof Wrench; label: string; value: string; unit?: string; tone: string; onClick: () => void }) { return <button className={`stat-card ${tone}`} onClick={onClick}><span className="stat-icon"><Icon size={18} /></span><span className="stat-label">{label}</span><strong>{value} {unit && <small>{unit}</small>}</strong><span className="stat-arrow">›</span></button>; }
-function RecordRow({ icon, title, meta, value }: { icon: React.ReactNode; title: string; meta: string; value: string }) { return <div className="record-row"><span className="record-icon">{icon}</span><span className="record-main"><strong>{title}</strong><small>{meta}</small></span><b>{value}</b></div>; }
+function RecordRow({ icon, title, meta, value, actions }: { icon: React.ReactNode; title: string; meta: string; value: string; actions?: React.ReactNode }) { return <div className="record-row"><span className="record-icon">{icon}</span><span className="record-main"><strong>{title}</strong><small>{meta}</small></span><b>{value}</b>{actions}</div>; }
+function RecordActions({ tr, onEdit, onDelete, onRead }: { tr: (k: TranslationKey) => string; onEdit: () => void; onDelete: () => void; onRead?: () => void }) { return <span className="record-actions"><button className="record-action" onClick={onEdit} aria-label={tr("edit")} title={tr("edit")}><Pencil size={14} /></button>{onRead && <button className="record-action" onClick={onRead} aria-label={tr("markRead")} title={tr("markRead")}><CheckCircle2 size={14} /></button>}<button className="record-action danger" onClick={() => { if (window.confirm(tr("confirmDelete"))) onDelete(); }} aria-label={tr("delete")} title={tr("delete")}><Trash2 size={14} /></button></span>; }
 function SmallEmpty({ text }: { text: string }) { return <div className="small-empty"><ClipboardList size={18} />{text}</div>; }
 
-function RecordsPage({ type, data, currentId, lang, tr, onAdd }: { type: "service" | "expenses" | "fuel" | "documents"; data?: AppData; currentId?: number; lang: Language; tr: (k: TranslationKey) => string; onAdd: () => void }) {
+function RecordsPage({ type, data, currentId, lang, tr, onAdd, onEdit, onDelete, readDocuments = {}, onRead }: { type: "service" | "expenses" | "fuel" | "documents"; data?: AppData; currentId?: number; lang: Language; tr: (k: TranslationKey) => string; onAdd: () => void; onEdit: (item: Record<string, unknown>) => void; onDelete: (id: number) => void; readDocuments?: Record<string, boolean>; onRead?: (id: number) => void }) {
   const items = type === "service" ? data?.maintenance?.filter(x => x.vehicleId === currentId) : type === "expenses" ? data?.expenses?.filter(x => x.vehicleId === currentId) : type === "fuel" ? data?.fuel?.filter(x => x.vehicleId === currentId) : data?.documents?.filter(x => x.vehicleId === currentId);
   const title = type === "service" ? tr("serviceHistory") : type === "expenses" ? tr("expenses") : type === "fuel" ? tr("fuel") : tr("documents");
   const action = type === "service" ? tr("addService") : type === "expenses" ? tr("addExpense") : type === "fuel" ? tr("addFuel") : tr("addDocument");
-  return <div className="page"><PageHeader title={title} subtitle={tr("dashboard")} action={action} onAction={onAdd} /><section className="panel record-list">{items?.length ? items.map(item => { if (type === "service") { const x = item as AppData["maintenance"][number]; return <RecordRow key={x.id} icon={<Wrench size={18} />} title={x.title} meta={`${formatDate(x.serviceDate, lang)} · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.cost, lang)} />; } if (type === "expenses") { const x = item as AppData["expenses"][number]; return <RecordRow key={x.id} icon={<CircleDollarSign size={18} />} title={x.title} meta={`${x.category} · ${formatDate(x.expenseDate, lang)}`} value={formatDzd(x.amount, lang)} />; } if (type === "fuel") { const x = item as AppData["fuel"][number]; return <RecordRow key={x.id} icon={<Fuel size={18} />} title={tr("lastFill")} meta={`${formatDate(x.fuelDate, lang)} · ${x.liters} L · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.amount, lang)} />; } const x = item as AppData["documents"][number]; const days = daysUntil(x.expiresOn); return <RecordRow key={x.id} icon={days !== null && days < 30 ? <AlertTriangle size={18} /> : <FileText size={18} />} title={x.title} meta={`${tr("expires")}: ${formatDate(x.expiresOn, lang)}`} value={days === null ? tr("stored") : remainingTime(x.expiresOn, lang)} />; }) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={25} /></div><h2>{tr("noData")}</h2><p>{tr("addRecord")}</p><button className="primary-button" onClick={onAdd}><Plus size={18} />{action}</button></div>}</section></div>;
+  return <div className="page"><PageHeader title={title} subtitle={tr("dashboard")} action={action} onAction={onAdd} /><section className="panel record-list">{items?.length ? items.map(item => { if (type === "service") { const x = item as AppData["maintenance"][number]; return <RecordRow key={x.id} icon={<Wrench size={18} />} title={x.title} meta={`${formatDate(x.serviceDate, lang)} · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.cost, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "expenses") { const x = item as AppData["expenses"][number]; return <RecordRow key={x.id} icon={<CircleDollarSign size={18} />} title={x.title} meta={`${x.category} · ${formatDate(x.expenseDate, lang)}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "fuel") { const x = item as AppData["fuel"][number]; return <RecordRow key={x.id} icon={<Fuel size={18} />} title={tr("lastFill")} meta={`${formatDate(x.fuelDate, lang)} · ${x.liters} L · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } const x = item as AppData["documents"][number]; const days = daysUntil(x.expiresOn); const isRead = Boolean(readDocuments[x.id]); return <RecordRow key={x.id} icon={days !== null && days < 30 ? <AlertTriangle size={18} /> : <FileText size={18} />} title={x.title} meta={`${tr("expires")}: ${formatDate(x.expiresOn, lang)}${isRead ? ` · ${tr("read")}` : ""}`} value={days === null ? tr("stored") : remainingTime(x.expiresOn, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} onRead={!isRead && onRead ? () => onRead(x.id) : undefined} />} />; }) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={25} /></div><h2>{tr("noData")}</h2><p>{tr("addRecord")}</p><button className="primary-button" onClick={onAdd}><Plus size={18} />{action}</button></div>}</section></div>;
 }
 
 function Settings({ data, lang, tr, isDemo, onLanguage, dark, onTheme, profileLink, onSaveLink, onProfileField }: { data?: AppData; lang: Language; tr: (k: TranslationKey) => string; isDemo: boolean; onLanguage: (l: Language) => void; dark: boolean; onTheme: (v: boolean) => void; profileLink: string; onSaveLink: () => void; onProfileField: (v: string) => void }) {

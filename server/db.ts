@@ -156,3 +156,38 @@ export async function createDocument(authUserId: string, value: Pick<Document, "
   });
   if (error) databaseError(error);
 }
+
+
+export async function updateMaintenance(authUserId: string, id: number, value: { title: string; serviceDate: string; mileage: number; cost: number; notes?: string }) {
+  const { data, error } = await getDb().from("maintenance").update({ title: value.title, service_date: value.serviceDate, mileage: value.mileage, cost: value.cost, notes: value.notes ?? null }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error);
+  if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Maintenance record not found." });
+}
+export async function deleteMaintenance(authUserId: string, id: number) {
+  const { data, error } = await getDb().from("maintenance").delete().eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Maintenance record not found." });
+}
+export async function updateExpense(authUserId: string, id: number, value: { title: string; category: Expense["category"]; amount: number; expenseDate: string }) {
+  const { data, error } = await getDb().from("expenses").update({ title: value.title, category: value.category, amount: value.amount, expense_date: value.expenseDate }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Expense not found." });
+}
+export async function deleteExpense(authUserId: string, id: number) {
+  const { data, error } = await getDb().from("expenses").delete().eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Expense not found." });
+}
+export async function updateFuel(authUserId: string, id: number, value: { amount: number; liters: number; pricePerLiter: number; mileage: number; fuelDate: string }) {
+  const { data, error } = await getDb().from("fuel_logs").update({ amount: value.amount, liters: value.liters, price_per_liter: value.pricePerLiter, mileage: value.mileage, fuel_date: value.fuelDate }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Fuel record not found." });
+}
+export async function deleteFuel(authUserId: string, id: number) {
+  const { data, error } = await getDb().from("fuel_logs").delete().eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Fuel record not found." });
+}
+export async function updateDocument(authUserId: string, id: number, value: { title: string; expiresOn?: string | null }) {
+  const { data, error } = await getDb().from("documents").update({ title: value.title, expires_on: value.expiresOn ?? null }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found." });
+}
+export async function deleteDocument(authUserId: string, id: number) {
+  const { data, error } = await getDb().from("documents").delete().eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+  if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found." });
+}

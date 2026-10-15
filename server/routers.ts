@@ -71,6 +71,8 @@ export const appRouter = router({
           await db.createMaintenance(ctx.user.authUserId, input);
           return db.getAppData(ctx.user.authUserId);
         }),
+      update: protectedProcedure.input(z.object({ id: vehicleId, title: z.string().trim().min(1).max(160), serviceDate: dateValue, mileage: z.number().int().min(0).max(10_000_000), cost: z.number().int().min(0).max(100_000_000), notes: z.string().trim().max(4000).optional() })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateMaintenance(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
+      delete: protectedProcedure.input(z.object({ id: vehicleId })).mutation(async ({ ctx, input }) => { await db.deleteMaintenance(ctx.user.authUserId, input.id); return db.getAppData(ctx.user.authUserId); }),
     }),
     expense: router({
       create: protectedProcedure
@@ -85,6 +87,8 @@ export const appRouter = router({
           await db.createExpense(ctx.user.authUserId, input);
           return db.getAppData(ctx.user.authUserId);
         }),
+      update: protectedProcedure.input(z.object({ id: vehicleId, title: z.string().trim().min(1).max(160), category: z.enum(["service", "fuel", "parts", "other"]), amount: z.number().int().min(0).max(100_000_000), expenseDate: dateValue })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateExpense(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
+      delete: protectedProcedure.input(z.object({ id: vehicleId })).mutation(async ({ ctx, input }) => { await db.deleteExpense(ctx.user.authUserId, input.id); return db.getAppData(ctx.user.authUserId); }),
     }),
     fuel: router({
       create: protectedProcedure
@@ -100,6 +104,8 @@ export const appRouter = router({
           await db.createFuel(ctx.user.authUserId, input);
           return db.getAppData(ctx.user.authUserId);
         }),
+      update: protectedProcedure.input(z.object({ id: vehicleId, amount: z.number().int().min(0).max(100_000_000), liters: z.number().int().min(0).max(10_000), pricePerLiter: z.number().int().min(0).max(1_000_000), mileage: z.number().int().min(0).max(10_000_000), fuelDate: dateValue })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateFuel(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
+      delete: protectedProcedure.input(z.object({ id: vehicleId })).mutation(async ({ ctx, input }) => { await db.deleteFuel(ctx.user.authUserId, input.id); return db.getAppData(ctx.user.authUserId); }),
     }),
     document: router({
       create: protectedProcedure
@@ -113,6 +119,8 @@ export const appRouter = router({
           await db.createDocument(ctx.user.authUserId, input);
           return db.getAppData(ctx.user.authUserId);
         }),
+      update: protectedProcedure.input(z.object({ id: vehicleId, title: z.string().trim().min(1).max(160), expiresOn: dateValue.nullable().optional() })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateDocument(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
+      delete: protectedProcedure.input(z.object({ id: vehicleId })).mutation(async ({ ctx, input }) => { await db.deleteDocument(ctx.user.authUserId, input.id); return db.getAppData(ctx.user.authUserId); }),
     }),
   }),
 });
