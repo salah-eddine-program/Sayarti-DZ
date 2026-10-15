@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   ClipboardList,
+  ExternalLink,
   FileText,
   Fuel,
   Globe2,
@@ -28,6 +29,7 @@ import { LOGIN_REQUEST_EVENT, startLogin } from "@/const";
 import AuthModal from "@/components/AuthModal";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
 import { languages, t, type Language, type TranslationKey } from "@/lib/i18n";
 
 const PROFILE_DEFAULT = "https://salah-eddine-program.github.io/bt-salahdine.com/";
@@ -37,7 +39,7 @@ const demo = {
   maintenance: [{ id: 1, vehicleId: 1, title: "Oil change", serviceDate: "2026-10-08", mileage: 185200, cost: 6500, notes: "Oil and filters changed" }],
   expenses: [{ id: 1, vehicleId: 1, title: "Oil change", category: "service", amount: 6500, expenseDate: "2026-10-08" }, { id: 2, vehicleId: 1, title: "Fuel", category: "fuel", amount: 1500, expenseDate: "2026-10-06" }, { id: 3, vehicleId: 1, title: "Other", category: "other", amount: 450, expenseDate: "2026-10-02" }],
   fuel: [{ id: 1, vehicleId: 1, amount: 2500, liters: 38, pricePerLiter: 6580, mileage: 184900, fuelDate: "2026-10-06" }],
-  documents: [{ id: 1, vehicleId: 1, title: "Insurance", expiresOn: "2026-11-20" }, { id: 2, vehicleId: 1, title: "Technical inspection", expiresOn: "2027-03-15" }, { id: 3, vehicleId: 1, title: "Registration card", expiresOn: null }],
+  documents: [{ id: 1, vehicleId: 1, title: "Insurance", category: "insurance", expiresOn: "2026-11-20", fileUrl: null }, { id: 2, vehicleId: 1, title: "Technical inspection", category: "technical", expiresOn: "2027-03-15", fileUrl: null }, { id: 3, vehicleId: 1, title: "Registration card", category: "registration", expiresOn: null, fileUrl: null }],
   user: { name: "Ahmed", email: "demo@example.com", language: "ar", theme: "light", profileLink: PROFILE_DEFAULT, plan: "free", premiumExpiresAt: null },
 };
 
@@ -111,6 +113,7 @@ export default function Home() {
   const [authOpen, setAuthOpen] = useState(false);
   const [formKind, setFormKind] = useState<FormKind>(null);
   const [form, setForm] = useState<FormState>({});
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | undefined>();
   const [toast, setToast] = useState("");
   const [readDocuments, setReadDocuments] = useState<Record<string, boolean>>(() => {
@@ -166,9 +169,9 @@ export default function Home() {
   });
   const documentCreate = trpc.app.document.create.useMutation({
     onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("documentSaved")); },
-    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, documents: [...data.documents, { id: -Date.now(), ...values, expiresOn: values.expiresOn ?? null, fileUrl: null }] }), tr("documentSaved"))) showToast(tr("required")); },
+    onError: (_error, values) => { if (!saveLocalFallback(data => ({ ...data, documents: [...data.documents, { id: -Date.now(), ...values, category: values.category || "other", expiresOn: values.expiresOn ?? null, fileUrl: null }] }), tr("documentSaved"))) showToast(tr("required")); },
   });
-  const safeMutation = (procedure: { useMutation?: (options: { onSuccess: () => void }) => { mutate: (value: never) => void } } | undefined, options: { onSuccess: () => void }) => procedure?.useMutation ? procedure.useMutation(options) : { mutate: () => undefined };
+  const safeMutation = (procedure: any, options: any): any => procedure?.useMutation ? procedure.useMutation(options) : { mutate: () => undefined };
   const maintenanceUpdate = safeMutation(trpc.app.maintenance.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
   const expenseUpdate = safeMutation(trpc.app.expense.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
   const fuelUpdate = safeMutation(trpc.app.fuel.update, { onSuccess: () => { dataQuery.refetch(); closeForm(); showToast(tr("saved")); } });
@@ -222,6 +225,7 @@ export default function Home() {
   function setTheme(next: boolean) { setDark(next); if (auth.isAuthenticated && !isDemo) settingsMutation.mutate({ theme: next ? "dark" : "light" }); }
   function openForm(kind: Exclude<FormKind, null>, item?: Record<string, unknown>) {
     setFormKind(kind);
+    setDocumentFile(null);
     setForm({
       id: item?.id ? String(item.id) : "",
       title: typeof item?.title === "string" ? item.title : kind === "maintenance" ? tr("oilChange") : "",
@@ -234,17 +238,17 @@ export default function Home() {
       date: typeof item?.serviceDate === "string" ? item.serviceDate.slice(0, 10) : today(),
       amount: item?.amount ? String(item.amount) : item?.cost ? String(item.cost) : "",
       notes: typeof item?.notes === "string" ? item.notes : "",
-      category: typeof item?.category === "string" ? item.category : "other",
       liters: item?.liters ? String(item.liters) : "",
       pricePerLiter: item?.pricePerLiter ? String(Number(item.pricePerLiter) / 100) : "",
       expiresOn: typeof item?.expiresOn === "string" ? item.expiresOn.slice(0, 10) : "",
+      category: typeof item?.category === "string" ? item.category : "other",
     });
   }
-  function closeForm() { setFormKind(null); setForm({}); }
+  function closeForm() { setFormKind(null); setForm({}); setDocumentFile(null); }
   function field(name: string, value: string) { setForm(current => ({ ...current, [name]: value })); }
   function numberValue(name: string) { return Number(form[name] || 0); }
   function requireVehicle() { if (!auth.isAuthenticated) { showToast(tr("signInToSave")); openAuth(); return false; } if (!currentId) { showToast(tr("noVehicle")); return false; } return true; }
-  function submitForm(event: React.FormEvent) {
+  async function submitForm(event: React.FormEvent) {
     event.preventDefault();
     if (!auth.isAuthenticated && !isDemo) { openAuth(); return; }
     if (formKind === "vehicle") {
@@ -259,7 +263,22 @@ export default function Home() {
     if (formKind === "maintenance") { const value = { title: form.title || tr("oilChange"), serviceDate: form.date || today(), mileage: numberValue("mileage"), cost: numberValue("amount"), notes: form.notes || undefined }; form.id ? maintenanceUpdate.mutate({ id: Number(form.id), ...value }) : maintenanceCreate.mutate({ vehicleId: currentId!, ...value }); }
     if (formKind === "expense") { const value = { title: form.title || tr("other"), category: (form.category || "other") as "service" | "fuel" | "parts" | "other", amount: numberValue("amount"), expenseDate: form.date || today() }; form.id ? expenseUpdate.mutate({ id: Number(form.id), ...value }) : expenseCreate.mutate({ vehicleId: currentId!, ...value }); }
     if (formKind === "fuel") { const value = { amount: numberValue("amount"), liters: numberValue("liters"), pricePerLiter: Math.round(numberValue("pricePerLiter") * 100), mileage: numberValue("mileage"), fuelDate: form.date || today() }; form.id ? fuelUpdate.mutate({ id: Number(form.id), ...value }) : fuelCreate.mutate({ vehicleId: currentId!, ...value }); }
-    if (formKind === "document") { const value = { title: form.title || tr("documents"), expiresOn: form.expiresOn || null }; form.id ? documentUpdate.mutate({ id: Number(form.id), ...value }) : documentCreate.mutate({ vehicleId: currentId!, ...value }); }
+    if (formKind === "document") {
+      let fileUrl = form.fileUrl || undefined;
+      if (documentFile) {
+        if (documentFile.size > 10 * 1024 * 1024) { showToast(tr("fileTooLarge")); return; }
+        if (!supabase) { showToast(tr("uploadFailed")); return; }
+        const user = (await supabase.auth.getUser()).data.user;
+        if (!user) { showToast(tr("signInToSave")); return; }
+        const safeName = documentFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+        const upload = await supabase.storage.from("documents").upload(path, documentFile, { upsert: false, contentType: documentFile.type || "application/octet-stream" });
+        if (upload.error) { showToast(tr("uploadFailed")); return; }
+        fileUrl = path;
+      }
+      const value = { title: form.title || tr("documents"), category: form.category || "other", expiresOn: form.expiresOn || null, fileUrl };
+      form.id ? documentUpdate.mutate({ id: Number(form.id), ...value }) : documentCreate.mutate({ vehicleId: currentId!, ...value });
+    }
   }
   function saveProfileLink() {
     const value = form.profileLink?.trim() ?? "";
@@ -280,6 +299,12 @@ export default function Home() {
     setReadDocuments(next);
     localStorage.setItem("sayarti.read-documents", JSON.stringify(next));
     showToast(tr("markedRead"));
+  }
+  async function openDocument(path: string | null) {
+    if (!path || !supabase) { showToast(tr("noFile")); return; }
+    const result = await supabase.storage.from("documents").createSignedUrl(path, 3600);
+    if (result.error || !result.data?.signedUrl) { showToast(tr("uploadFailed")); return; }
+    window.open(result.data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   function completeFirstSetup(values: { name: string; brand: string; model: string; year: string; fuelType: string; mileage: string; plateNumber: string }) {
@@ -325,11 +350,11 @@ export default function Home() {
       {page === "service" && <RecordsPage type="service" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("maintenance")} onEdit={item => openForm("maintenance", item)} onDelete={id => deleteRecord("service", id)} />}
       {page === "expenses" && <RecordsPage type="expenses" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("expense")} onEdit={item => openForm("expense", item)} onDelete={id => deleteRecord("expenses", id)} />}
       {page === "fuel" && <RecordsPage type="fuel" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("fuel")} onEdit={item => openForm("fuel", item)} onDelete={id => deleteRecord("fuel", id)} />}
-      {page === "documents" && <RecordsPage type="documents" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("document")} onEdit={item => openForm("document", item)} onDelete={id => deleteRecord("documents", id)} readDocuments={readDocuments} onRead={markDocumentRead} />}
+      {page === "documents" && <RecordsPage type="documents" data={data} currentId={currentId} lang={lang} tr={tr} onAdd={() => openForm("document")} onEdit={item => openForm("document", item)} onDelete={id => deleteRecord("documents", id)} readDocuments={readDocuments} onRead={markDocumentRead} onOpen={path => void openDocument(path)} />}
       {page === "settings" && <Settings data={data} lang={lang} tr={tr} isDemo={isDemo} onLanguage={setLanguage} dark={dark} onTheme={setTheme} profileLink={profileLink()} onSaveLink={saveProfileLink} onProfileField={value => field("profileLink", value)} />}
     </main>
     <div className="mobile-nav">{([{ id: "home", icon: BarChart3, key: "home" }, { id: "service", icon: Wrench, key: "service" }, { id: "expenses", icon: CircleDollarSign, key: "expenses" }, { id: "documents", icon: FileText, key: "documents" }, { id: "settings", icon: Settings2, key: "settings" }] as const).map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id as Page)}><Icon size={19} /><span>{tr(item.key as TranslationKey)}</span></button>; })}</div>
-    {formKind && <Modal kind={formKind} form={form} setForm={field} tr={tr} onClose={closeForm} onSubmit={submitForm} busy={busy} />}
+    {formKind && <Modal kind={formKind} form={form} setForm={field} tr={tr} onClose={closeForm} onSubmit={submitForm} busy={busy} onFile={setDocumentFile} />}
     {authModal}
     {toast && <div className="toast"><CheckCircle2 size={17} />{toast}</div>}
   </div>;
@@ -353,14 +378,14 @@ function Dashboard({ data, currentVehicle, monthlySpend, nextDocument, lastFuel,
 
 function StatCard({ icon: Icon, label, value, unit, tone, onClick }: { icon: typeof Wrench; label: string; value: string; unit?: string; tone: string; onClick: () => void }) { return <button className={`stat-card ${tone}`} onClick={onClick}><span className="stat-icon"><Icon size={18} /></span><span className="stat-label">{label}</span><strong>{value} {unit && <small>{unit}</small>}</strong><span className="stat-arrow">›</span></button>; }
 function RecordRow({ icon, title, meta, value, actions }: { icon: React.ReactNode; title: string; meta: string; value: string; actions?: React.ReactNode }) { return <div className="record-row"><span className="record-icon">{icon}</span><span className="record-main"><strong>{title}</strong><small>{meta}</small></span><b>{value}</b>{actions}</div>; }
-function RecordActions({ tr, onEdit, onDelete, onRead }: { tr: (k: TranslationKey) => string; onEdit: () => void; onDelete: () => void; onRead?: () => void }) { return <span className="record-actions"><button className="record-action" onClick={onEdit} aria-label={tr("edit")} title={tr("edit")}><Pencil size={14} /></button>{onRead && <button className="record-action" onClick={onRead} aria-label={tr("markRead")} title={tr("markRead")}><CheckCircle2 size={14} /></button>}<button className="record-action danger" onClick={() => { if (window.confirm(tr("confirmDelete"))) onDelete(); }} aria-label={tr("delete")} title={tr("delete")}><Trash2 size={14} /></button></span>; }
+function RecordActions({ tr, onEdit, onDelete, onRead, onOpen }: { tr: (k: TranslationKey) => string; onEdit: () => void; onDelete: () => void; onRead?: () => void; onOpen?: () => void }) { return <span className="record-actions">{onOpen && <button className="record-action" onClick={onOpen} aria-label={tr("openFile")} title={tr("openFile")}><ExternalLink size={14} /></button>}<button className="record-action" onClick={onEdit} aria-label={tr("edit")} title={tr("edit")}><Pencil size={14} /></button>{onRead && <button className="record-action" onClick={onRead} aria-label={tr("markRead")} title={tr("markRead")}><CheckCircle2 size={14} /></button>}<button className="record-action danger" onClick={() => { if (window.confirm(tr("confirmDelete"))) onDelete(); }} aria-label={tr("delete")} title={tr("delete")}><Trash2 size={14} /></button></span>; }
 function SmallEmpty({ text }: { text: string }) { return <div className="small-empty"><ClipboardList size={18} />{text}</div>; }
 
-function RecordsPage({ type, data, currentId, lang, tr, onAdd, onEdit, onDelete, readDocuments = {}, onRead }: { type: "service" | "expenses" | "fuel" | "documents"; data?: AppData; currentId?: number; lang: Language; tr: (k: TranslationKey) => string; onAdd: () => void; onEdit: (item: Record<string, unknown>) => void; onDelete: (id: number) => void; readDocuments?: Record<string, boolean>; onRead?: (id: number) => void }) {
+function RecordsPage({ type, data, currentId, lang, tr, onAdd, onEdit, onDelete, readDocuments = {}, onRead, onOpen }: { type: "service" | "expenses" | "fuel" | "documents"; data?: AppData; currentId?: number; lang: Language; tr: (k: TranslationKey) => string; onAdd: () => void; onEdit: (item: Record<string, unknown>) => void; onDelete: (id: number) => void; readDocuments?: Record<string, boolean>; onRead?: (id: number) => void; onOpen?: (path: string | null) => void }) {
   const items = type === "service" ? data?.maintenance?.filter(x => x.vehicleId === currentId) : type === "expenses" ? data?.expenses?.filter(x => x.vehicleId === currentId) : type === "fuel" ? data?.fuel?.filter(x => x.vehicleId === currentId) : data?.documents?.filter(x => x.vehicleId === currentId);
   const title = type === "service" ? tr("serviceHistory") : type === "expenses" ? tr("expenses") : type === "fuel" ? tr("fuel") : tr("documents");
   const action = type === "service" ? tr("addService") : type === "expenses" ? tr("addExpense") : type === "fuel" ? tr("addFuel") : tr("addDocument");
-  return <div className="page"><PageHeader title={title} subtitle={tr("dashboard")} action={action} onAction={onAdd} /><section className="panel record-list">{items?.length ? items.map(item => { if (type === "service") { const x = item as AppData["maintenance"][number]; return <RecordRow key={x.id} icon={<Wrench size={18} />} title={x.title} meta={`${formatDate(x.serviceDate, lang)} · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.cost, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "expenses") { const x = item as AppData["expenses"][number]; return <RecordRow key={x.id} icon={<CircleDollarSign size={18} />} title={x.title} meta={`${x.category} · ${formatDate(x.expenseDate, lang)}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "fuel") { const x = item as AppData["fuel"][number]; return <RecordRow key={x.id} icon={<Fuel size={18} />} title={tr("lastFill")} meta={`${formatDate(x.fuelDate, lang)} · ${x.liters} L · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } const x = item as AppData["documents"][number]; const days = daysUntil(x.expiresOn); const isRead = Boolean(readDocuments[x.id]); return <RecordRow key={x.id} icon={days !== null && days < 30 ? <AlertTriangle size={18} /> : <FileText size={18} />} title={x.title} meta={`${tr("expires")}: ${formatDate(x.expiresOn, lang)}${isRead ? ` · ${tr("read")}` : ""}`} value={days === null ? tr("stored") : remainingTime(x.expiresOn, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} onRead={!isRead && onRead ? () => onRead(x.id) : undefined} />} />; }) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={25} /></div><h2>{tr("noData")}</h2><p>{tr("addRecord")}</p><button className="primary-button" onClick={onAdd}><Plus size={18} />{action}</button></div>}</section></div>;
+  return <div className="page"><PageHeader title={title} subtitle={tr("dashboard")} action={action} onAction={onAdd} /><section className="panel record-list">{items?.length ? items.map(item => { if (type === "service") { const x = item as AppData["maintenance"][number]; return <RecordRow key={x.id} icon={<Wrench size={18} />} title={x.title} meta={`${formatDate(x.serviceDate, lang)} · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.cost, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "expenses") { const x = item as AppData["expenses"][number]; return <RecordRow key={x.id} icon={<CircleDollarSign size={18} />} title={x.title} meta={`${x.category} · ${formatDate(x.expenseDate, lang)}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } if (type === "fuel") { const x = item as AppData["fuel"][number]; return <RecordRow key={x.id} icon={<Fuel size={18} />} title={tr("lastFill")} meta={`${formatDate(x.fuelDate, lang)} · ${x.liters} L · ${x.mileage.toLocaleString()} ${tr("km")}`} value={formatDzd(x.amount, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} />} />; } const x = item as AppData["documents"][number]; const days = daysUntil(x.expiresOn); const isRead = Boolean(readDocuments[x.id]); return <RecordRow key={x.id} icon={days !== null && days < 30 ? <AlertTriangle size={18} /> : <FileText size={18} />} title={x.title} meta={`${x.category} · ${tr("expires")}: ${formatDate(x.expiresOn, lang)}${isRead ? ` · ${tr("read")}` : ""}`} value={days === null ? tr("stored") : remainingTime(x.expiresOn, lang)} actions={<RecordActions tr={tr} onEdit={() => onEdit(x as unknown as Record<string, unknown>)} onDelete={() => onDelete(x.id)} onRead={!isRead && onRead ? () => onRead(x.id) : undefined} onOpen={x.fileUrl && onOpen ? () => onOpen(x.fileUrl) : undefined} />} />; }) : <div className="empty-state"><div className="empty-icon"><ClipboardList size={25} /></div><h2>{tr("noData")}</h2><p>{tr("addRecord")}</p><button className="primary-button" onClick={onAdd}><Plus size={18} />{action}</button></div>}</section></div>;
 }
 
 function Settings({ data, lang, tr, isDemo, onLanguage, dark, onTheme, profileLink, onSaveLink, onProfileField }: { data?: AppData; lang: Language; tr: (k: TranslationKey) => string; isDemo: boolean; onLanguage: (l: Language) => void; dark: boolean; onTheme: (v: boolean) => void; profileLink: string; onSaveLink: () => void; onProfileField: (v: string) => void }) {
@@ -369,9 +394,9 @@ function Settings({ data, lang, tr, isDemo, onLanguage, dark, onTheme, profileLi
   return <div className="page"><PageHeader title={tr("settings")} subtitle={tr("account")} /><div className="settings-grid"><section className="panel settings-card"><div className="settings-title"><div className="avatar large">{(data?.user?.name || "S").slice(0, 1).toUpperCase()}</div><div><h2>{data?.user?.name || tr("sampleData")}</h2><p>{data?.user?.email || tr("sampleNote")}</p></div></div><label className="form-label">{tr("language")}</label><LanguageSelect value={lang} onChange={onLanguage} /><label className="form-label">{tr("theme")}</label><button className="setting-toggle" onClick={() => onTheme(!dark)}><span>{dark ? <Moon size={17} /> : <Sun size={17} />}{dark ? tr("dark") : tr("light")}</span><span className={`toggle ${dark ? "on" : ""}`}><i /></span></button></section><section className="panel settings-card"><div className="panel-heading"><div><p className="eyebrow">{tr("profileLink")}</p><h2>{tr("openProfile")}</h2></div><Globe2 size={22} color={palette.green} /></div><input className="text-input" value={value} onChange={e => { setValue(e.target.value); onProfileField(e.target.value); }} placeholder={tr("profileHint")} type="url" /><div className="button-row"><button className="secondary-button" onClick={onSaveLink}>{tr("save")}</button><button className="text-button" onClick={() => window.open(value, "_blank", "noopener,noreferrer")}>{tr("openProfile")}</button></div>{isDemo && <p className="field-hint">{tr("sampleNote")}</p>}</section><section className="panel premium-settings"><div className="premium-icon"><Sparkles size={20} /></div><div><span className="eyebrow">{tr("premium")}</span><h2>{tr("premiumPrice")}</h2><p>{tr("premiumDesc")}</p><small>{tr("paymentOff")}</small></div></section></div></div>;
 }
 
-function Modal({ kind, form, setForm, tr, onClose, onSubmit, busy }: { kind: Exclude<FormKind, null>; form: FormState; setForm: (name: string, value: string) => void; tr: (k: TranslationKey) => string; onClose: () => void; onSubmit: (e: React.FormEvent) => void; busy: boolean }) {
+function Modal({ kind, form, setForm, tr, onClose, onSubmit, busy, onFile }: { kind: Exclude<FormKind, null>; form: FormState; setForm: (name: string, value: string) => void; tr: (k: TranslationKey) => string; onClose: () => void; onSubmit: (e: React.FormEvent) => void; busy: boolean; onFile: (file: File | null) => void }) {
   const title = kind === "vehicle" ? tr("addVehicle") : kind === "maintenance" ? tr("addService") : kind === "expense" ? tr("addExpense") : kind === "fuel" ? tr("addFuel") : tr("addDocument");
-  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><div className="modal-header"><div><p className="eyebrow">SAYARTI DZ</p><h2>{title}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><form onSubmit={onSubmit}><div className="form-grid">{kind === "vehicle" ? <><Field label={tr("make")} name="brand" value={form.brand} set={setForm} required /><Field label={tr("model")} name="model" value={form.model} set={setForm} required /><Field label={tr("year")} name="year" value={form.year} set={setForm} type="number" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("plate")} name="plateNumber" value={form.plateNumber} set={setForm} /><SelectField label={tr("fuelType")} name="fuelType" value={form.fuelType} set={setForm} options={[["diesel", tr("diesel")], ["petrol", tr("petrol")], ["lpg", tr("lpg")], ["electric", tr("electric")]]} /></> : <><Field label={tr("title")} name="title" value={form.title} set={setForm} required />{kind === "maintenance" && <><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("cost")} name="amount" value={form.amount} set={setForm} type="number" required /><TextArea label={tr("notes")} name="notes" value={form.notes} set={setForm} /></>}{kind === "expense" && <><Field label={tr("amount")} name="amount" value={form.amount} set={setForm} type="number" required /><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /><SelectField label={tr("category")} name="category" value={form.category} set={setForm} options={[["service", tr("serviceCategory")], ["fuel", tr("fuelCategory")], ["parts", tr("parts")], ["other", tr("other")]]} /></>}{kind === "fuel" && <><Field label={tr("amount")} name="amount" value={form.amount} set={setForm} type="number" required /><Field label={tr("liters")} name="liters" value={form.liters} set={setForm} type="number" required /><Field label={tr("priceLiter")} name="pricePerLiter" value={form.pricePerLiter} set={setForm} type="number" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /></>}{kind === "document" && <Field label={tr("expires")} name="expiresOn" value={form.expiresOn} set={setForm} type="date" />}</>}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{tr("cancel")}</button><button className="primary-button" disabled={busy} type="submit">{busy ? <span className="spinner" /> : <CheckCircle2 size={17} />}{tr("save")}</button></div></form></div></div>;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><div className="modal-header"><div><p className="eyebrow">SAYARTI DZ</p><h2>{title}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><form onSubmit={onSubmit}><div className="form-grid">{kind === "vehicle" ? <><Field label={tr("make")} name="brand" value={form.brand} set={setForm} required /><Field label={tr("model")} name="model" value={form.model} set={setForm} required /><Field label={tr("year")} name="year" value={form.year} set={setForm} type="number" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("plate")} name="plateNumber" value={form.plateNumber} set={setForm} /><SelectField label={tr("fuelType")} name="fuelType" value={form.fuelType} set={setForm} options={[["diesel", tr("diesel")], ["petrol", tr("petrol")], ["lpg", tr("lpg")], ["electric", tr("electric")]]} /></> : <><Field label={tr("title")} name="title" value={form.title} set={setForm} required />{kind === "maintenance" && <><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("cost")} name="amount" value={form.amount} set={setForm} type="number" required /><TextArea label={tr("notes")} name="notes" value={form.notes} set={setForm} /></>}{kind === "expense" && <><Field label={tr("amount")} name="amount" value={form.amount} set={setForm} type="number" required /><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /><SelectField label={tr("category")} name="category" value={form.category} set={setForm} options={[["service", tr("serviceCategory")], ["fuel", tr("fuelCategory")], ["parts", tr("parts")], ["other", tr("other")]]} /></>}{kind === "fuel" && <><Field label={tr("amount")} name="amount" value={form.amount} set={setForm} type="number" required /><Field label={tr("liters")} name="liters" value={form.liters} set={setForm} type="number" required /><Field label={tr("priceLiter")} name="pricePerLiter" value={form.pricePerLiter} set={setForm} type="number" required /><Field label={tr("mileage")} name="mileage" value={form.mileage} set={setForm} type="number" required /><Field label={tr("date")} name="date" value={form.date} set={setForm} type="date" required /></>}{kind === "document" && <><SelectField label={tr("category")} name="category" value={form.category} set={setForm} options={[["insurance", tr("insurance")], ["technical", tr("technical")], ["registration", tr("registration")], ["other", tr("other")]]} /><Field label={tr("customCategory")} name="category" value={form.category} set={setForm} /><Field label={tr("expires")} name="expiresOn" value={form.expiresOn} set={setForm} type="date" /><label className="field wide"><span>{tr("uploadDocument")}</span><input className="text-input" type="file" accept="application/pdf,image/*" onChange={event => onFile(event.target.files?.[0] ?? null)} /><small className="field-hint">{tr("uploadHint")}</small></label></>}</>}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{tr("cancel")}</button><button className="primary-button" disabled={busy} type="submit">{busy ? <span className="spinner" /> : <CheckCircle2 size={17} />}{tr("save")}</button></div></form></div></div>;
 }
 function Field({ label, name, value, set, type = "text", required = false }: { label: string; name: string; value?: string; set: (n: string, v: string) => void; type?: string; required?: boolean }) { return <label className="field"><span>{label}</span><input className="text-input" type={type} value={value ?? ""} onChange={e => set(name, e.target.value)} required={required} /></label>; }
 function TextArea({ label, name, value, set }: { label: string; name: string; value?: string; set: (n: string, v: string) => void }) { return <label className="field wide"><span>{label}</span><textarea className="text-input" value={value ?? ""} onChange={e => set(name, e.target.value)} rows={3} /></label>; }

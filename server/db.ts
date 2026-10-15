@@ -148,11 +148,11 @@ export async function createFuel(authUserId: string, value: Pick<FuelLog, "vehic
   if (error) databaseError(error);
 }
 
-export async function createDocument(authUserId: string, value: Pick<Document, "vehicleId" | "title"> & { expiresOn?: string | null; fileUrl?: string }) {
+export async function createDocument(authUserId: string, value: Pick<Document, "vehicleId" | "title"> & { category?: string; expiresOn?: string | null; fileUrl?: string }) {
   await verifyVehicle(authUserId, value.vehicleId);
   const { error } = await getDb().from("documents").insert({
     auth_user_id: authUserId, vehicle_id: value.vehicleId, title: value.title,
-    expires_on: value.expiresOn ?? null, file_url: value.fileUrl ?? null,
+    category: value.category?.trim() || "other", expires_on: value.expiresOn ?? null, file_url: value.fileUrl ?? null,
   });
   if (error) databaseError(error);
 }
@@ -183,8 +183,8 @@ export async function deleteFuel(authUserId: string, id: number) {
   const { data, error } = await getDb().from("fuel_logs").delete().eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
   if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Fuel record not found." });
 }
-export async function updateDocument(authUserId: string, id: number, value: { title: string; expiresOn?: string | null }) {
-  const { data, error } = await getDb().from("documents").update({ title: value.title, expires_on: value.expiresOn ?? null }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
+export async function updateDocument(authUserId: string, id: number, value: { title: string; category?: string; expiresOn?: string | null; fileUrl?: string | null }) {
+  const { data, error } = await getDb().from("documents").update({ title: value.title, category: value.category?.trim() || "other", expires_on: value.expiresOn ?? null, ...(value.fileUrl !== undefined ? { file_url: value.fileUrl } : {}) }).eq("id", id).eq("auth_user_id", authUserId).select("id").maybeSingle();
   if (error) databaseError(error); if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found." });
 }
 export async function deleteDocument(authUserId: string, id: number) {

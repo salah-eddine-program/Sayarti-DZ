@@ -112,14 +112,15 @@ export const appRouter = router({
         .input(z.object({
           vehicleId,
           title: z.string().trim().min(1).max(160),
+          category: z.string().trim().min(1).max(80).default("other"),
           expiresOn: dateValue.nullable().optional(),
-          fileUrl: z.string().url().max(2048).optional(),
+          fileUrl: z.string().max(512).optional(),
         }))
         .mutation(async ({ ctx, input }) => {
           await db.createDocument(ctx.user.authUserId, input);
           return db.getAppData(ctx.user.authUserId);
         }),
-      update: protectedProcedure.input(z.object({ id: vehicleId, title: z.string().trim().min(1).max(160), expiresOn: dateValue.nullable().optional() })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateDocument(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
+      update: protectedProcedure.input(z.object({ id: vehicleId, title: z.string().trim().min(1).max(160), category: z.string().trim().min(1).max(80).default("other"), expiresOn: dateValue.nullable().optional(), fileUrl: z.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => { const { id, ...value } = input; await db.updateDocument(ctx.user.authUserId, id, value); return db.getAppData(ctx.user.authUserId); }),
       delete: protectedProcedure.input(z.object({ id: vehicleId })).mutation(async ({ ctx, input }) => { await db.deleteDocument(ctx.user.authUserId, input.id); return db.getAppData(ctx.user.authUserId); }),
     }),
   }),
