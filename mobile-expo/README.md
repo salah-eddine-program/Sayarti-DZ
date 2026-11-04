@@ -1,0 +1,18 @@
+# سيارتي DZ — تطبيق Expo
+
+هذه نسخة الهاتف الأصلية التجريبية من **سيارتي DZ**، محفوظة في `mobile-expo/` حتى تبقى ملفات الموقع ونسخة Android الحالية في جذر المستودع دون استبدال.
+
+- العربية والفرنسية والإنجليزية، مع RTL للعربية.
+- متابعة السيارة والصيانة والمصاريف والوقود والوثائق.
+- رابط الملف الشخصي المضاف في الإعدادات: https://salah-eddine-program.github.io/bt-salahdine.com/
+
+## APK
+
+من صفحة **Actions** في GitHub اختر سير العمل **Sayarti DZ Android APK (Expo)** ثم **Run workflow**. بعد اكتماله حمّل الـ artifact باسم `sayarti-dz-expo-debug-apk` وثبّت ملف APK على جهاز Android. هذا إصدار Debug قابل للتثبيت والاختبار؛ يحتاج نشر Google Play إلى مفتاح توقيع إصدار خاص.
+
+## تشغيل Expo
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
