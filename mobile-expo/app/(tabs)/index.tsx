@@ -32,6 +32,13 @@ import {
   type MaintenanceItem,
 } from "@/lib/sayarti/demo-data";
 import {
+  parseAccountProfile,
+  validateAccountProfile,
+  vehicleFuelTypes,
+  type AccountProfile,
+  type VehicleProfile,
+} from "@/lib/sayarti/profile";
+import {
   languages,
   t,
   type Language,
@@ -115,7 +122,20 @@ const emptyDraft: Draft = {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const [page, setPage] = useState<Page>("home");
+  const [page, setPage] = useState<Page>("welcome");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [signupFirstName, setSignupFirstName] = useState("");
+  const [signupLastName, setSignupLastName] = useState("");
+  const [signupVehicle, setSignupVehicle] = useState<VehicleProfile>({
+    brand: "",
+    model: "",
+    year: "",
+    fuel: "diesel",
+    mileage: "",
+  });
+  const [registrationError, setRegistrationError] = useState("");
+  const [accountProfileLoaded, setAccountProfileLoaded] = useState(false);
   const [language, setLanguage] = useState<Language>("ar");
   const [darkMode, setDarkMode] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -126,7 +146,7 @@ export default function HomeScreen() {
   const [profileLink, setProfileLink] = useState(
     "https://salah-eddine-program.github.io/bt-salahdine.com/",
   );
-  const [vehicle, setVehicle] = useState({
+  const [vehicle, setVehicle] = useState<VehicleProfile>({
     brand: "Renault",
     model: "Clio 4",
     year: "2018",
@@ -186,6 +206,7 @@ export default function HomeScreen() {
       "sayarti.language",
       "sayarti.darkMode",
       "sayarti.profileLink",
+      "sayarti.accountProfile",
     ])
       .then((values) => {
         const savedLanguage = values[0]?.[1];
@@ -197,9 +218,25 @@ export default function HomeScreen() {
           setLanguage(savedLanguage);
         if (values[1]?.[1] === "true") setDarkMode(true);
         if (values[2]?.[1]) setProfileLink(values[2][1] as string);
+        const savedProfile = values[3]?.[1];
+        if (savedProfile) {
+          const profile = parseAccountProfile(savedProfile);
+          if (profile) {
+            setFirstName(profile.firstName);
+            setLastName(profile.lastName);
+            setSignupFirstName(profile.firstName);
+            setSignupLastName(profile.lastName);
+            setVehicle(profile.vehicle);
+            setSignupVehicle(profile.vehicle);
+            setPage((current) => (current === "welcome" ? "home" : current));
+          }
+        }
       })
       .catch(() => undefined)
-      .finally(() => setSettingsLoaded(true));
+      .finally(() => {
+        setSettingsLoaded(true);
+        setAccountProfileLoaded(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -212,12 +249,60 @@ export default function HomeScreen() {
   }, [darkMode, language, profileLink, settingsLoaded]);
 
   useEffect(() => {
+    if (!accountProfileLoaded || !firstName.trim() || !lastName.trim()) return;
+    const profile: AccountProfile = { firstName, lastName, vehicle };
+    AsyncStorage.setItem("sayarti.accountProfile", JSON.stringify(profile)).catch(
+      () => undefined,
+    );
+  }, [accountProfileLoaded, firstName, lastName, vehicle]);
+
+  useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 2400);
     return () => clearTimeout(timer);
   }, [notice]);
 
   const showNotice = (message = tr("savedToast")) => setNotice(message);
+
+  const createLocalProfile = async () => {
+    const profile: AccountProfile = {
+      firstName: signupFirstName.trim(),
+      lastName: signupLastName.trim(),
+      vehicle: {
+        ...signupVehicle,
+        brand: signupVehicle.brand.trim(),
+        model: signupVehicle.model.trim(),
+        year: signupVehicle.year.trim(),
+        mileage: signupVehicle.mileage.trim(),
+      },
+    };
+    const error = validateAccountProfile(profile);
+    if (error) {
+      setRegistrationError(tr(error));
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        "sayarti.accountProfile",
+        JSON.stringify(profile),
+      );
+    } catch {
+      setRegistrationError(tr("profileSaveError"));
+      return;
+    }
+
+    setRegistrationError("");
+    setFirstName(profile.firstName);
+    setLastName(profile.lastName);
+    setSignupFirstName(profile.firstName);
+    setSignupLastName(profile.lastName);
+    setVehicle(profile.vehicle);
+    setSignupVehicle(profile.vehicle);
+    setAccountProfileLoaded(true);
+    setPage("home");
+    showNotice(tr("profileSaved"));
+  };
 
   const openForm = (kind: Exclude<FormKind, null>) => {
     setInvoiceAttached(false);
@@ -665,7 +750,7 @@ export default function HomeScreen() {
       <View style={[styles.welcomeLine, { flexDirection: direction }]}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={[styles.greeting, { color: c.ink }, textDirection]}>
-            {tr("greeting")} 👋
+            {firstName ? `${tr("greeting")} ${firstName}` : tr("greeting")} 👋
           </Text>
           <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
             {tr("subtitle")}
@@ -1195,7 +1280,7 @@ export default function HomeScreen() {
             {tr("settings")}
           </Text>
           <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
-            {tr("accountDemo")}
+            {firstName && lastName ? `${firstName} ${lastName}` : tr("accountDemo")}
           </Text>
         </View>
         <View style={[styles.roundIcon, { backgroundColor: c.greenSoft }]}>
@@ -1380,98 +1465,274 @@ export default function HomeScreen() {
     </>
   );
 
-  const AuthContent = ({ register = false }: { register?: boolean }) => (
-    <View style={styles.authWrap}>
-      <Pressable
-        onPress={() => setPage("home")}
-        style={[styles.backButton, { flexDirection: direction }]}
-      >
-        <Ionicons
-          name={isRTL ? "arrow-forward" : "arrow-back"}
-          size={20}
-          color={c.dark}
+  const AuthContent = ({ register = false }: { register?: boolean }) => {
+    const registrationField = (
+      label: TranslationKey,
+      value: string,
+      onChangeText: (value: string) => void,
+      keyboardType: "default" | "number-pad" = "default",
+    ) => (
+      <View style={{ gap: 8 }}>
+        <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+          {tr(label)}
+        </Text>
+        <TextInput
+          value={value}
+          onChangeText={(nextValue) => {
+            onChangeText(nextValue);
+            if (registrationError) setRegistrationError("");
+          }}
+          placeholder={tr(label)}
+          placeholderTextColor={c.muted}
+          keyboardType={keyboardType}
+          autoCapitalize={keyboardType === "default" ? "words" : "none"}
+          autoCorrect={false}
+          returnKeyType="next"
+          textAlign={isRTL && keyboardType === "default" ? "right" : "left"}
+          style={[
+            styles.input,
+            {
+              backgroundColor: c.surface,
+              color: c.ink,
+              borderColor: c.line,
+            },
+          ]}
         />
-        <Text style={[styles.backText, { color: c.ink }]}>{tr("back")}</Text>
-      </Pressable>
-      <View style={[styles.authBrand, { backgroundColor: c.dark }]}>
-        <BrandMark size={64} />
-        <Text style={styles.authBrandText}>{tr("brand")}</Text>
-        <Text style={styles.authBrandSub}>{tr("tagline")}</Text>
       </View>
-      <Text style={[styles.authTitle, { color: c.ink }, textDirection]}>
-        {register ? tr("createAccount") : tr("signIn")}
-      </Text>
-      <Text style={[styles.authNote, { color: c.muted }, textDirection]}>
-        {tr("loginNote")}
-      </Text>
-      <View style={{ gap: 14, marginTop: 24 }}>
-        <View>
-          <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
-            {tr("email")}
-          </Text>
-          <TextInput
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            style={[
-              styles.input,
-              {
-                marginTop: 8,
-                backgroundColor: c.surface,
-                color: c.ink,
-                borderColor: c.line,
-              },
-            ]}
-          />
-        </View>
-        <View>
-          <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
-            {tr("password")}
-          </Text>
-          <TextInput
-            placeholder="••••••••"
-            secureTextEntry
-            style={[
-              styles.input,
-              {
-                marginTop: 8,
-                backgroundColor: c.surface,
-                color: c.ink,
-                borderColor: c.line,
-              },
-            ]}
-          />
-        </View>
-      </View>
-      <Pressable
-        onPress={() => {
-          setPage("home");
-          showNotice(tr("signedInAs"));
-        }}
-        style={[styles.authButton, { backgroundColor: c.green }]}
+    );
+
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
       >
-        <Text style={styles.authButtonText}>
-          {register ? tr("createAccount") : tr("signIn")}
-        </Text>
-      </Pressable>
-      <Pressable
-        onPress={() => setPage(register ? "login" : "register")}
-        style={styles.switchAuth}
-      >
-        <Text style={[styles.switchAuthText, { color: c.muted }]}>
-          {register ? tr("signIn") : tr("noAccount")}{" "}
-          <Text style={{ color: c.green, fontWeight: "800" }}>
-            {register ? tr("signIn") : tr("createAccount")}
-          </Text>
-        </Text>
-      </Pressable>
-      <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
-        <Text style={[styles.guestText, { color: c.dark }]}>
-          {tr("continueDemo")}
-        </Text>
-      </Pressable>
-    </View>
-  );
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.authScrollContent}
+        >
+          <View style={styles.authWrap}>
+            <Pressable
+              onPress={() => setPage(register || !firstName ? "welcome" : "home")}
+              style={[styles.backButton, { flexDirection: direction }]}
+            >
+              <Ionicons
+                name={isRTL ? "arrow-forward" : "arrow-back"}
+                size={20}
+                color={c.dark}
+              />
+              <Text style={[styles.backText, { color: c.ink }]}>
+                {tr("back")}
+              </Text>
+            </Pressable>
+            <View
+              style={[
+                styles.authBrand,
+                {
+                  backgroundColor: c.dark,
+                  minHeight: register ? 118 : 195,
+                  padding: register ? 14 : 20,
+                },
+              ]}
+            >
+              <BrandMark size={register ? 50 : 64} />
+              <Text style={styles.authBrandText}>{tr("brand")}</Text>
+              <Text style={styles.authBrandSub}>{tr("tagline")}</Text>
+            </View>
+            <Text style={[styles.authTitle, { color: c.ink }, textDirection]}>
+              {register ? tr("createAccount") : tr("signIn")}
+            </Text>
+            <Text style={[styles.authNote, { color: c.muted }, textDirection]}>
+              {register ? tr("signupNote") : tr("loginNote")}
+            </Text>
+
+            {register ? (
+              <View style={{ gap: 13, marginTop: 10 }}>
+                <Text
+                  style={[
+                    styles.signupSectionTitle,
+                    { color: c.dark },
+                    textDirection,
+                  ]}
+                >
+                  {tr("personalInformation")}
+                </Text>
+                {registrationField(
+                  "firstName",
+                  signupFirstName,
+                  setSignupFirstName,
+                )}
+                {registrationField(
+                  "lastName",
+                  signupLastName,
+                  setSignupLastName,
+                )}
+                <Text
+                  style={[
+                    styles.signupSectionTitle,
+                    { color: c.dark, marginTop: 4 },
+                    textDirection,
+                  ]}
+                >
+                  {tr("carDetails")}
+                </Text>
+                {registrationField(
+                  "brandName",
+                  signupVehicle.brand,
+                  (brand) =>
+                    setSignupVehicle((current) => ({ ...current, brand })),
+                )}
+                {registrationField(
+                  "model",
+                  signupVehicle.model,
+                  (model) =>
+                    setSignupVehicle((current) => ({ ...current, model })),
+                )}
+                {registrationField(
+                  "year",
+                  signupVehicle.year,
+                  (year) =>
+                    setSignupVehicle((current) => ({ ...current, year })),
+                  "number-pad",
+                )}
+                <View style={{ gap: 8 }}>
+                  <Text
+                    style={[styles.fieldLabel, { color: c.ink }, textDirection]}
+                  >
+                    {tr("fuelType")}
+                  </Text>
+                  <View
+                    style={[styles.fuelChipList, { flexDirection: direction }]}
+                  >
+                    {vehicleFuelTypes.map((fuel) => {
+                      const selected = signupVehicle.fuel === fuel;
+                      return (
+                        <Pressable
+                          key={fuel}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => {
+                            setSignupVehicle((current) => ({ ...current, fuel }));
+                            setRegistrationError("");
+                          }}
+                          style={[
+                            styles.fuelChip,
+                            {
+                              backgroundColor: selected ? c.dark : c.surface,
+                              borderColor: selected ? c.dark : c.line,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.fuelChipText,
+                              { color: selected ? "#FFFFFF" : c.ink },
+                            ]}
+                          >
+                            {tr(fuel)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+                {registrationField(
+                  "mileage",
+                  signupVehicle.mileage,
+                  (mileage) =>
+                    setSignupVehicle((current) => ({ ...current, mileage })),
+                  "number-pad",
+                )}
+                {registrationError ? (
+                  <Text
+                    accessibilityRole="alert"
+                    style={[styles.formError, { color: c.red }, textDirection]}
+                  >
+                    {registrationError}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={{ gap: 14, marginTop: 24 }}>
+                <View>
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+                    {tr("email")}
+                  </Text>
+                  <TextInput
+                    placeholder="name@example.com"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    style={[
+                      styles.input,
+                      {
+                        marginTop: 8,
+                        backgroundColor: c.surface,
+                        color: c.ink,
+                        borderColor: c.line,
+                      },
+                    ]}
+                  />
+                </View>
+                <View>
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+                    {tr("password")}
+                  </Text>
+                  <TextInput
+                    placeholder="••••••••"
+                    secureTextEntry
+                    style={[
+                      styles.input,
+                      {
+                        marginTop: 8,
+                        backgroundColor: c.surface,
+                        color: c.ink,
+                        borderColor: c.line,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            )}
+
+            <Pressable
+              onPress={
+                register
+                  ? createLocalProfile
+                  : () => {
+                      setPage("home");
+                      showNotice(tr("signedInAs"));
+                    }
+              }
+              style={[styles.authButton, { backgroundColor: c.green }]}
+            >
+              <Text style={styles.authButtonText}>
+                {register ? tr("createAccount") : tr("signIn")}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setRegistrationError("");
+                setPage(register ? "login" : "register");
+              }}
+              style={styles.switchAuth}
+            >
+              <Text style={[styles.switchAuthText, { color: c.muted }, textDirection]}>
+                {register ? tr("signIn") : tr("noAccount")} {" "}
+                <Text style={{ color: c.green, fontWeight: "800" }}>
+                  {register ? tr("signIn") : tr("createAccount")}
+                </Text>
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
+              <Text style={[styles.guestText, { color: c.dark }]}>
+                {tr("continueDemo")}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  };
 
   const WelcomeContent = () => (
     <View style={styles.welcomeWrap}>
@@ -1489,10 +1750,20 @@ export default function HomeScreen() {
       </View>
       <View style={{ paddingHorizontal: 24, gap: 12, marginTop: 24 }}>
         {PrimaryButton({
-          label: tr("startNow"),
-          onPress: () => setPage("login"),
-          icon: "arrow-forward-outline",
+          label: tr("createAccount"),
+          onPress: () => setPage("register"),
+          icon: "person-add-outline",
         })}
+        <Pressable onPress={() => setPage("login")} style={styles.switchAuth}>
+          <Text
+            style={[styles.switchAuthText, { color: c.muted }, textDirection]}
+          >
+            {tr("alreadyHaveAccount")} {" "}
+            <Text style={{ color: c.green, fontWeight: "800" }}>
+              {tr("signIn")}
+            </Text>
+          </Text>
+        </Pressable>
         <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
           <Text style={[styles.guestText, { color: c.dark }]}>
             {tr("continueDemo")}
@@ -2312,6 +2583,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   tabText: { fontSize: 9, fontWeight: "700" },
+  authScrollContent: { flexGrow: 1, paddingBottom: 24 },
   authWrap: {
     width: "100%",
     maxWidth: 500,
@@ -2341,6 +2613,20 @@ const styles = StyleSheet.create({
   authTitle: { fontSize: 23, fontWeight: "900", marginTop: 7 },
   authNote: { fontSize: 10, lineHeight: 16 },
   fieldLabel: { fontSize: 11, fontWeight: "800" },
+  signupSectionTitle: { fontSize: 12, fontWeight: "900" },
+  fuelChipList: { gap: 8, flexWrap: "wrap" },
+  fuelChip: {
+    flex: 1,
+    minWidth: 80,
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fuelChipText: { fontSize: 11, fontWeight: "800" },
+  formError: { fontSize: 11, lineHeight: 17, fontWeight: "700" },
   authButton: {
     minHeight: 50,
     borderRadius: 16,
