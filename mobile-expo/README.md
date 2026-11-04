@@ -6,6 +6,10 @@
 - متابعة السيارة والصيانة والمصاريف والوقود والوثائق.
 - رابط الملف الشخصي المضاف في الإعدادات: https://salah-eddine-program.github.io/bt-salahdine.com/
 
+## الموقع التفاعلي على الحاسوب
+
+نسخة الويب التفاعلية منشورة على [GitHub Pages](https://salah-eddine-program.github.io/Sayarti-DZ/sayarti-app/)، مع الإبقاء على الموقع الموجود في جذر المستودع كما هو.
+
 ## APK
 
 من صفحة **Actions** في GitHub اختر سير العمل **Sayarti DZ Android APK (Expo)** ثم **Run workflow**. بعد اكتماله حمّل الـ artifact باسم `sayarti-dz-expo-debug-apk` وثبّت ملف APK على جهاز Android. هذا إصدار Debug قابل للتثبيت والاختبار؛ يحتاج نشر Google Play إلى مفتاح توقيع إصدار خاص.
