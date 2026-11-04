@@ -24,6 +24,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9.12.0
+          package_json_file: mobile-expo/package.json
 
       - name: Set up Java
         uses: actions/setup-java@v4
