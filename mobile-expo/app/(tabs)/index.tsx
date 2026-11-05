@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -73,17 +74,19 @@ type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 const palette = {
   light: {
-    bg: "#F3F7F5",
+    bg: "#F5F7F1",
     surface: "#FFFFFF",
-    surfaceSoft: "#EAF2EE",
-    ink: "#16363C",
-    muted: "#71868A",
-    line: "#E2EBE6",
-    dark: "#0B3D46",
-    green: "#13B889",
-    greenSoft: "#DFF5EB",
-    orange: "#F0A43A",
-    orangeSoft: "#FFF3E2",
+    surfaceSoft: "#EDF3E7",
+    ink: "#173A2A",
+    muted: "#728272",
+    line: "#DFE8D9",
+    dark: "#02281C",
+    green: "#114722",
+    greenSoft: "#E8F1E2",
+    gold: "#FED439",
+    goldSoft: "#FFF7D9",
+    orange: "#F58220",
+    orangeSoft: "#FFF1DD",
     red: "#D95E52",
     redSoft: "#FCEBE8",
     blue: "#3888B5",
@@ -91,17 +94,19 @@ const palette = {
     purple: "#8167CF",
   },
   dark: {
-    bg: "#101D20",
-    surface: "#17292D",
-    surfaceSoft: "#20363A",
-    ink: "#ECF5F1",
-    muted: "#A3B5B4",
-    line: "#2D4244",
-    dark: "#092F37",
-    green: "#28C695",
-    greenSoft: "#173F38",
-    orange: "#F4B556",
-    orangeSoft: "#443522",
+    bg: "#0D1811",
+    surface: "#17251B",
+    surfaceSoft: "#203020",
+    ink: "#ECF4E8",
+    muted: "#A8B6A1",
+    line: "#354735",
+    dark: "#071F15",
+    green: "#91C84A",
+    greenSoft: "#20391F",
+    gold: "#FED439",
+    goldSoft: "#433A18",
+    orange: "#FFAA24",
+    orangeSoft: "#463517",
     red: "#EF8277",
     redSoft: "#402927",
     blue: "#6AB0D5",
@@ -457,7 +462,7 @@ export default function HomeScreen() {
           accessibilityRole="button"
           accessibilityLabel={tr("account")}
         >
-          <Ionicons name="person-outline" size={19} color={c.dark} />
+          <Ionicons name="person-outline" size={19} color={c.ink} />
         </Pressable>
         <Pressable
           onPress={() => showNotice(tr("notifications"))}
@@ -468,7 +473,7 @@ export default function HomeScreen() {
           accessibilityRole="button"
           accessibilityLabel={tr("notifications")}
         >
-          <Ionicons name="notifications-outline" size={19} color={c.dark} />
+          <Ionicons name="notifications-outline" size={19} color={c.ink} />
           <View
             style={[styles.notificationDot, { backgroundColor: c.orange }]}
           />
@@ -694,7 +699,7 @@ export default function HomeScreen() {
         ]}
       >
         <View style={[styles.rowIcon, { backgroundColor: c.surfaceSoft }]}>
-          <Ionicons name={iconName} size={19} color={c.dark} />
+          <Ionicons name={iconName} size={19} color={c.ink} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
@@ -758,7 +763,7 @@ export default function HomeScreen() {
         </View>
         <View style={[styles.demoBadge, { backgroundColor: c.greenSoft }]}>
           <View style={[styles.liveDot, { backgroundColor: c.green }]} />
-          <Text style={[styles.demoBadgeText, { color: c.dark }]}>
+          <Text style={[styles.demoBadgeText, { color: c.ink }]}>
             {tr("demoTag")}
           </Text>
         </View>
@@ -828,7 +833,7 @@ export default function HomeScreen() {
           <Text style={[styles.alertTitle, { color: c.ink }, textDirection]}>
             {tr("upcoming")}
           </Text>
-          <Text style={[styles.alertValue, { color: c.dark }, textDirection]}>
+          <Text style={[styles.alertValue, { color: c.ink }, textDirection]}>
             {tr("oilChange")}
           </Text>
           <Text style={[styles.alertSub, { color: c.muted }, textDirection]}>
@@ -839,7 +844,7 @@ export default function HomeScreen() {
           <Ionicons
             name={isRTL ? "chevron-back" : "chevron-forward"}
             size={18}
-            color={c.dark}
+            color={c.ink}
           />
         </View>
       </Pressable>
@@ -1000,7 +1005,7 @@ export default function HomeScreen() {
           <Text style={[styles.legendText, { color: c.muted }, textDirection]}>
             {tr("perKm")}
           </Text>
-          <Text style={[styles.perKmValue, { color: c.dark }]}>
+          <Text style={[styles.perKmValue, { color: c.ink }]}>
             18.4 {tr("priceShort")} / {tr("km")}
           </Text>
         </View>
@@ -1344,7 +1349,7 @@ export default function HomeScreen() {
           <Ionicons
             name={darkMode ? "moon-outline" : "sunny-outline"}
             size={19}
-            color={c.dark}
+            color={c.ink}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -1398,8 +1403,8 @@ export default function HomeScreen() {
             { flexDirection: direction, backgroundColor: c.surfaceSoft },
           ]}
         >
-          <Ionicons name="link-outline" size={17} color={c.dark} />
-          <Text style={[styles.openLinkText, { color: c.dark }]}>
+          <Ionicons name="link-outline" size={17} color={c.ink} />
+          <Text style={[styles.openLinkText, { color: c.ink }]}>
             {tr("openProfile")}
           </Text>
         </Pressable>
@@ -1457,7 +1462,7 @@ export default function HomeScreen() {
           { borderColor: c.line, flexDirection: direction },
         ]}
       >
-        <Ionicons name="log-in-outline" size={18} color={c.dark} />
+        <Ionicons name="log-in-outline" size={18} color={c.ink} />
         <Text style={[styles.secondaryButtonText, { color: c.ink }]}>
           {tr("demoLogin")}
         </Text>
@@ -1519,7 +1524,7 @@ export default function HomeScreen() {
               <Ionicons
                 name={isRTL ? "arrow-forward" : "arrow-back"}
                 size={20}
-                color={c.dark}
+                color={c.ink}
               />
               <Text style={[styles.backText, { color: c.ink }]}>
                 {tr("back")}
@@ -1530,14 +1535,18 @@ export default function HomeScreen() {
                 styles.authBrand,
                 {
                   backgroundColor: c.dark,
-                  minHeight: register ? 118 : 195,
-                  padding: register ? 14 : 20,
+                  padding: 10,
                 },
               ]}
             >
-              <BrandMark size={register ? 50 : 64} />
-              <Text style={styles.authBrandText}>{tr("brand")}</Text>
-              <Text style={styles.authBrandSub}>{tr("tagline")}</Text>
+              <View style={styles.brandLogoPlate}>
+                <Image
+                  source={require("@/assets/images/sayarti-dz-logo.png")}
+                  resizeMode="contain"
+                  accessibilityLabel="شعار سيارتي DZ"
+                  style={styles.brandLogoImage}
+                />
+              </View>
             </View>
             <Text style={[styles.authTitle, { color: c.ink }, textDirection]}>
               {register ? tr("createAccount") : tr("signIn")}
@@ -1551,7 +1560,7 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.signupSectionTitle,
-                    { color: c.dark },
+                    { color: c.ink },
                     textDirection,
                   ]}
                 >
@@ -1570,7 +1579,7 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.signupSectionTitle,
-                    { color: c.dark, marginTop: 4 },
+                    { color: c.ink, marginTop: 4 },
                     textDirection,
                   ]}
                 >
@@ -1724,7 +1733,7 @@ export default function HomeScreen() {
               </Text>
             </Pressable>
             <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
-              <Text style={[styles.guestText, { color: c.dark }]}>
+              <Text style={[styles.guestText, { color: c.ink }]}>
                 {tr("continueDemo")}
               </Text>
             </Pressable>
@@ -1735,18 +1744,27 @@ export default function HomeScreen() {
   };
 
   const WelcomeContent = () => (
-    <View style={styles.welcomeWrap}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.welcomeWrap}
+    >
       <View style={[styles.welcomeHero, { backgroundColor: c.dark }]}>
         <View style={styles.welcomeGlow} />
-        <BrandMark size={126} />
-        <Text style={styles.welcomeBrand}>{tr("brand")}</Text>
+        <View style={styles.brandLogoPlate}>
+          <Image
+            source={require("@/assets/images/sayarti-dz-logo.png")}
+            resizeMode="contain"
+            accessibilityLabel="شعار سيارتي DZ"
+            style={styles.brandLogoImage}
+          />
+        </View>
         <Text style={[styles.welcomeTitle, textDirection]}>
           {tr("welcomeTitle")}
         </Text>
         <Text style={[styles.welcomeSubtitle, textDirection]}>
           {tr("welcomeSubtitle")}
         </Text>
-        <View style={[styles.roadLine, { backgroundColor: c.green }]} />
+        <View style={[styles.roadLine, { backgroundColor: c.gold }]} />
       </View>
       <View style={{ paddingHorizontal: 24, gap: 12, marginTop: 24 }}>
         {PrimaryButton({
@@ -1765,7 +1783,7 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
         <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
-          <Text style={[styles.guestText, { color: c.dark }]}>
+          <Text style={[styles.guestText, { color: c.ink }]}>
             {tr("continueDemo")}
           </Text>
         </Pressable>
@@ -1793,7 +1811,7 @@ export default function HomeScreen() {
           ))}
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 
   const VehicleContent = () => (
@@ -1805,7 +1823,7 @@ export default function HomeScreen() {
         <Ionicons
           name={isRTL ? "arrow-forward" : "arrow-back"}
           size={20}
-          color={c.dark}
+          color={c.ink}
         />
         <Text style={[styles.backText, { color: c.ink }]}>{tr("back")}</Text>
       </Pressable>
@@ -2051,7 +2069,7 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <Ionicons name="checkmark-circle" size={18} color="#79E0B8" />
+          <Ionicons name="checkmark-circle" size={18} color="#9ACC4D" />
           <Text style={styles.toastText}>{notice}</Text>
         </View>
       ) : null}
@@ -2114,7 +2132,7 @@ export default function HomeScreen() {
                   onPress={() => setInvoiceAttached((attached) => !attached)}
                   style={[styles.uploadButton, { flexDirection: direction, borderColor: c.line, backgroundColor: c.surfaceSoft }]}
                 >
-                  <Ionicons name={invoiceAttached ? "checkmark-done-outline" : "attach-outline"} size={19} color={invoiceAttached ? c.green : c.dark} />
+                  <Ionicons name={invoiceAttached ? "checkmark-done-outline" : "attach-outline"} size={19} color={invoiceAttached ? c.green : c.ink} />
                   <Text style={[styles.inlineHintText, { color: invoiceAttached ? c.green : c.ink }, textDirection]}>
                     {invoiceAttached ? tr("invoiceAdded") : tr("invoice")}
                   </Text>
@@ -2219,7 +2237,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 24,
-    backgroundColor: "#174E53",
+    backgroundColor: "#114722",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2229,14 +2247,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: "#1C585C",
+    backgroundColor: "#174F2A",
   },
-  carTagText: { color: "#A6E9D1", fontSize: 10, fontWeight: "800" },
-  carMeta: { color: "#D2E8E2", fontSize: 12, fontWeight: "600" },
+  carTagText: { color: "#D0E9B6", fontSize: 10, fontWeight: "800" },
+  carMeta: { color: "#D8E9D3", fontSize: 12, fontWeight: "600" },
   odometerTrack: {
     height: 4,
     width: "100%",
-    backgroundColor: "#1C565A",
+    backgroundColor: "#0D3A22",
     borderRadius: 4,
     overflow: "hidden",
     marginTop: 2,
@@ -2244,10 +2262,10 @@ const styles = StyleSheet.create({
   odometerFill: {
     height: 4,
     width: "66%",
-    backgroundColor: "#25C896",
+    backgroundColor: "#619B15",
     borderRadius: 4,
   },
-  odometerHint: { color: "#9BCDC0", fontSize: 10, fontWeight: "600" },
+  odometerHint: { color: "#B6D69B", fontSize: 10, fontWeight: "600" },
   alertCard: {
     alignItems: "center",
     gap: 12,
@@ -2415,7 +2433,7 @@ const styles = StyleSheet.create({
     gap: 8,
     overflow: "hidden",
   },
-  heroLabel: { color: "#B8D7CE", fontSize: 11, fontWeight: "700" },
+  heroLabel: { color: "#D8E9D3", fontSize: 11, fontWeight: "700" },
   heroAmount: {
     color: "#FFFFFF",
     fontSize: 32,
@@ -2429,7 +2447,7 @@ const styles = StyleSheet.create({
     paddingTop: 11,
     marginTop: 2,
   },
-  heroMetaText: { color: "#C2DFD6", fontSize: 10, fontWeight: "600" },
+  heroMetaText: { color: "#C9DFAF", fontSize: 10, fontWeight: "600" },
   categoryRow: {
     minHeight: 65,
     borderRadius: 17,
@@ -2514,19 +2532,19 @@ const styles = StyleSheet.create({
   },
   premiumLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "800", flex: 1 },
   premiumTag: {
-    backgroundColor: "#174E53",
+    backgroundColor: "#114722",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 7,
   },
   premiumTagText: {
-    color: "#99E6C9",
+    color: "#D0E98E",
     fontSize: 8,
     fontWeight: "900",
     letterSpacing: 1,
   },
   premiumTitle: { color: "#FFFFFF", fontSize: 19, fontWeight: "900" },
-  premiumDesc: { color: "#B8D7CE", fontSize: 11, lineHeight: 17 },
+  premiumDesc: { color: "#D8E9D3", fontSize: 11, lineHeight: 17 },
   premiumFooter: {
     borderTopWidth: 1,
     borderTopColor: "#FFFFFF25",
@@ -2536,9 +2554,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
-  premiumPrice: { color: "#A7EACD", fontSize: 12, fontWeight: "900" },
+  premiumPrice: { color: "#FED439", fontSize: 12, fontWeight: "900" },
   previewOnly: {
-    color: "#BCD0CC",
+    color: "#C9DFAF",
     fontSize: 8,
     fontWeight: "700",
     flexShrink: 1,
@@ -2601,15 +2619,23 @@ const styles = StyleSheet.create({
   backText: { fontSize: 12, fontWeight: "700" },
   authBrand: {
     borderRadius: 25,
-    minHeight: 195,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
-    gap: 6,
+    padding: 10,
     overflow: "hidden",
   },
-  authBrandText: { color: "#FFFFFF", fontSize: 22, fontWeight: "900" },
-  authBrandSub: { color: "#B4DACE", fontSize: 10, textAlign: "center" },
+  brandLogoPlate: {
+    width: "100%",
+    maxWidth: 330,
+    aspectRatio: 1.5,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  brandLogoImage: { width: "100%", height: "100%" },
   authTitle: { fontSize: 23, fontWeight: "900", marginTop: 7 },
   authNote: { fontSize: 10, lineHeight: 16 },
   fieldLabel: { fontSize: 11, fontWeight: "800" },
@@ -2644,7 +2670,7 @@ const styles = StyleSheet.create({
   },
   guestText: { fontSize: 11, fontWeight: "800" },
   welcomeWrap: {
-    flex: 1,
+    flexGrow: 1,
     width: "100%",
     maxWidth: 560,
     alignSelf: "center",
@@ -2666,11 +2692,10 @@ const styles = StyleSheet.create({
     width: 340,
     height: 340,
     borderRadius: 200,
-    backgroundColor: "#145056",
+    backgroundColor: "#114722",
     top: -90,
     right: -80,
   },
-  welcomeBrand: { fontSize: 33, fontWeight: "900", letterSpacing: -1.2 },
   welcomeTitle: {
     color: "#FFFFFF",
     fontSize: 19,
@@ -2679,7 +2704,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   welcomeSubtitle: {
-    color: "#B8D7CE",
+    color: "#D8E9D3",
     fontSize: 12,
     lineHeight: 19,
     textAlign: "center",

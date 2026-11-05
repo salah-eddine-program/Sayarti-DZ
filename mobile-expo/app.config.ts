@@ -30,9 +30,8 @@ const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "سيارتي DZ — Sayarti DZ",
   appSlug: "sayartidz",
-  // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
-  // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663990664138/oayTmbdkvuTTZMBS.png",
+  // Durable public project-logo URL. Native and website assets are bundled separately below.
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663990664138/TAQlXtpUdbLYKRhh.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -77,7 +76,7 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#0B3D46",
+      backgroundColor: "#02281C",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -123,12 +122,12 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
-        imageWidth: 200,
+        image: "./assets/images/sayarti-dz-logo.png",
+        imageWidth: 300,
         resizeMode: "contain",
-        backgroundColor: "#0B3D46",
+        backgroundColor: "#FFFFFF",
         dark: {
-          backgroundColor: "#0B3D46",
+          backgroundColor: "#FFFFFF",
         },
       },
     ],
