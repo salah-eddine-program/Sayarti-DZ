@@ -35,6 +35,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build static frontend
         run: pnpm build
+        env:
+          BASE_PATH: /Sayarti-DZ/
       - name: Set up Expo pnpm
         uses: pnpm/action-setup@v4
         with:
