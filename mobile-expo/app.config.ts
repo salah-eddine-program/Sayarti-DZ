@@ -120,6 +120,13 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-notifications",
+      {
+        defaultChannel: "sayarti-reminders",
+        color: "#0B4A2A",
+      },
+    ],
+    [
       "expo-splash-screen",
       {
         image: "./assets/images/sayarti-dz-logo.png",

@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
 import {
+  AppState,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -27,11 +29,28 @@ import {
   initialExpenses,
   initialFuel,
   initialMaintenance,
+  initialServicePlans,
   type DocumentItem,
   type ExpenseItem,
   type FuelItem,
   type MaintenanceItem,
+  type ServicePlanItem,
 } from "@/lib/sayarti/demo-data";
+import {
+  makeRecordId,
+  makeReminderKey,
+  getDueReminders,
+  isInCalendarMonth,
+  isInCalendarYear,
+  parseRecordDate,
+  parseRecordsSnapshot,
+  reminderDateAfter,
+  reminderIntervals,
+  removeSnapshotRecord,
+  type RecordKind,
+  type ReminderDays,
+  type ScheduledReminder,
+} from "@/lib/sayarti/records";
 import {
   parseAccountProfile,
   validateAccountProfile,
@@ -60,7 +79,8 @@ type TabPage = Extract<
   Page,
   "home" | "maintenance" | "expenses" | "documents" | "settings"
 >;
-type FormKind = "maintenance" | "expense" | "fuel" | "document" | null;
+type FormKind = RecordKind | null;
+type RecordTarget = { kind: RecordKind; recordId: string; title: string };
 type Draft = {
   title: string;
   date: string;
@@ -69,8 +89,20 @@ type Draft = {
   detail: string;
   liters: string;
   price: string;
+  category: string;
 };
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 const palette = {
   light: {
@@ -117,12 +149,20 @@ const palette = {
 
 const emptyDraft: Draft = {
   title: "",
-  date: "08/10/2026",
+  date: "",
   mileage: "185200",
   amount: "",
   detail: "",
   liters: "38",
   price: "65.80",
+  category: "otherCategory",
+};
+
+const todayAsDmy = () => {
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, "0");
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${today.getFullYear()}`;
 };
 
 export default function HomeScreen() {
@@ -145,6 +185,13 @@ export default function HomeScreen() {
   const [darkMode, setDarkMode] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [formKind, setFormKind] = useState<FormKind>(null);
+  const [editingTarget, setEditingTarget] = useState<{
+    kind: RecordKind;
+    recordId: string;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RecordTarget | null>(null);
+  const [scheduleTarget, setScheduleTarget] =
+    useState<RecordTarget | null>(null);
   const [invoiceAttached, setInvoiceAttached] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [notice, setNotice] = useState("");
@@ -164,6 +211,10 @@ export default function HomeScreen() {
   const [fuelRecords, setFuelRecords] = useState<FuelItem[]>(initialFuel);
   const [documentsList, setDocumentsList] =
     useState<DocumentItem[]>(initialDocuments);
+  const [servicePlans, setServicePlans] =
+    useState<ServicePlanItem[]>(initialServicePlans);
+  const [reminders, setReminders] = useState<ScheduledReminder[]>([]);
+  const [recordsLoaded, setRecordsLoaded] = useState(false);
 
   const c = darkMode ? palette.dark : palette.light;
   const isRTL = language === "ar";
@@ -203,7 +254,71 @@ export default function HomeScreen() {
     const match = equivalents.find(([, labels]) => labels.includes(label));
     return match ? tr(match[0]) : label;
   };
-  const monthlyTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
+  const categoryKeyFor = (category: string): TranslationKey => {
+    if (["Fuel", "Carburant", "الوقود"].includes(category)) return "fuelCategory";
+    if (["Service", "Entretien", "الصيانة"].includes(category)) return "serviceCategory";
+    if (["Parts", "Pièces", "قطع الغيار"].includes(category)) return "partsCategory";
+    return "otherCategory";
+  };
+  const calendarNow = new Date();
+  const monthlyExpenses = expenses.filter((item) =>
+    isInCalendarMonth(item.date, calendarNow),
+  );
+  const annualExpenses = expenses.filter((item) =>
+    isInCalendarYear(item.date, calendarNow),
+  );
+  const insuranceDocument = documentsList.find(
+    (item) =>
+      item.id === "document-insurance" ||
+      ["Insurance", "Assurance", "التأمين"].includes(item.title),
+  );
+  const insuranceExpiry = insuranceDocument
+    ? parseRecordDate(insuranceDocument.expiry)
+    : null;
+  const dayNumber = (date: Date) =>
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const insuranceDaysRemaining = insuranceExpiry
+    ? Math.max(
+        0,
+        Math.ceil((dayNumber(insuranceExpiry) - dayNumber(calendarNow)) / 86_400_000),
+      )
+    : null;
+  const insuranceDaysLabel =
+    insuranceDaysRemaining === null
+      ? tr("dueSoon")
+      : insuranceDaysRemaining === 0
+        ? language === "ar"
+          ? "ينتهي اليوم"
+          : language === "fr"
+            ? "Échéance aujourd’hui"
+            : "Expires today"
+        : language === "ar"
+          ? insuranceDaysRemaining === 1
+            ? "متبقي يوم واحد"
+            : `متبقي ${insuranceDaysRemaining} يومًا`
+          : language === "fr"
+            ? `Dans ${insuranceDaysRemaining} jour${insuranceDaysRemaining === 1 ? "" : "s"}`
+            : `In ${insuranceDaysRemaining} day${insuranceDaysRemaining === 1 ? "" : "s"}`;
+  const monthlyTotal = monthlyExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const annualTotal = annualExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const expenseCategoryPresentation = [
+    { key: "fuelCategory" as const, icon: "flash-outline" as IoniconName, tint: c.blue },
+    { key: "serviceCategory" as const, icon: "construct-outline" as IoniconName, tint: c.green },
+    { key: "partsCategory" as const, icon: "cube-outline" as IoniconName, tint: c.purple },
+    { key: "otherCategory" as const, icon: "ellipsis-horizontal" as IoniconName, tint: c.orange },
+  ];
+  const totalForCategory = (source: ExpenseItem[], key: TranslationKey) =>
+    source
+      .filter((expense) => categoryKeyFor(expense.category) === key)
+      .reduce((sum, expense) => sum + expense.amount, 0);
+  const monthlyCategoryBreakdown = expenseCategoryPresentation.map((item) => ({
+    ...item,
+    amount: totalForCategory(monthlyExpenses, item.key),
+  }));
+  const annualCategoryBreakdown = expenseCategoryPresentation.map((item) => ({
+    ...item,
+    amount: totalForCategory(annualExpenses, item.key),
+  }));
   const fuelEntry = fuelRecords[0] ?? initialFuel[0];
 
   useEffect(() => {
@@ -212,6 +327,7 @@ export default function HomeScreen() {
       "sayarti.darkMode",
       "sayarti.profileLink",
       "sayarti.accountProfile",
+      "sayarti.records.v1",
     ])
       .then((values) => {
         const savedLanguage = values[0]?.[1];
@@ -236,11 +352,19 @@ export default function HomeScreen() {
             setPage((current) => (current === "welcome" ? "home" : current));
           }
         }
+        const savedRecords = parseRecordsSnapshot(values[4]?.[1] ?? null);
+        setMaintenanceRecords(savedRecords.maintenanceRecords);
+        setExpenses(savedRecords.expenses);
+        setFuelRecords(savedRecords.fuelRecords);
+        setDocumentsList(savedRecords.documentsList);
+        setServicePlans(savedRecords.servicePlans);
+        setReminders(savedRecords.reminders);
       })
       .catch(() => undefined)
       .finally(() => {
         setSettingsLoaded(true);
         setAccountProfileLoaded(true);
+        setRecordsLoaded(true);
       });
   }, []);
 
@@ -262,10 +386,80 @@ export default function HomeScreen() {
   }, [accountProfileLoaded, firstName, lastName, vehicle]);
 
   useEffect(() => {
+    if (!recordsLoaded) return;
+    AsyncStorage.setItem(
+      "sayarti.records.v1",
+      JSON.stringify({
+        maintenanceRecords,
+        expenses,
+        fuelRecords,
+        documentsList,
+        servicePlans,
+        reminders,
+      }),
+    ).catch(() => undefined);
+  }, [
+    documentsList,
+    expenses,
+    fuelRecords,
+    maintenanceRecords,
+    recordsLoaded,
+    reminders,
+    servicePlans,
+  ]);
+
+  useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 2400);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!recordsLoaded) return;
+    const checkDueReminders = () => {
+      const due = getDueReminders(reminders);
+      if (due.length === 0) return;
+      if (
+        Platform.OS === "web" &&
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        window.Notification.permission === "granted"
+      ) {
+        due.forEach((item) => {
+          try {
+            new window.Notification(t(language, "reminderNotificationTitle"), {
+              body: `${t(language, "reminderNotificationBody")} · ${item.title}`,
+            });
+          } catch {
+            // The in-app notice below remains available if the browser blocks delivery.
+          }
+        });
+      }
+      setNotice(
+        `${t(language, "reminderDueNow")}: ${due.map((item) => item.title).join(" · ")}`,
+      );
+      const dueKeys = new Set(due.map((item) => item.key));
+      setReminders((current) =>
+        current.map((item) =>
+          dueKeys.has(item.key)
+            ? { ...item, triggeredAt: new Date().toISOString() }
+            : item,
+        ),
+      );
+    };
+    checkDueReminders();
+    const timer = setInterval(checkDueReminders, 30_000);
+    const appStateSubscription =
+      Platform.OS === "web"
+        ? null
+        : AppState.addEventListener("change", (nextAppState) => {
+            if (nextAppState === "active") checkDueReminders();
+          });
+    return () => {
+      clearInterval(timer);
+      appStateSubscription?.remove();
+    };
+  }, [language, recordsLoaded, reminders]);
 
   const showNotice = (message = tr("savedToast")) => setNotice(message);
 
@@ -309,76 +503,359 @@ export default function HomeScreen() {
     showNotice(tr("profileSaved"));
   };
 
-  const openForm = (kind: Exclude<FormKind, null>) => {
+  const openForm = (kind: RecordKind) => {
     setInvoiceAttached(false);
+    setEditingTarget(null);
     setDraft({
       ...emptyDraft,
+      date: kind === "document" || kind === "servicePlan" ? "" : todayAsDmy(),
       title:
-        kind === "maintenance"
+        kind === "maintenance" || kind === "servicePlan"
           ? tr("oilChange")
           : kind === "fuel"
             ? tr("fuel")
             : "",
+      detail: kind === "document" ? "valid" : "",
     });
     setFormKind(kind);
   };
 
+  const beginEdit = (kind: RecordKind, recordId: string) => {
+    setInvoiceAttached(false);
+    setEditingTarget({ kind, recordId });
+    if (kind === "maintenance") {
+      const item = maintenanceRecords.find((record) => record.id === recordId);
+      if (!item) return;
+      setDraft({
+        ...emptyDraft,
+        title: item.title,
+        date: item.date,
+        mileage: item.mileage.replace(/[^0-9]/g, ""),
+        amount: String(item.cost),
+        detail: item.note ?? "",
+      });
+    } else if (kind === "expense") {
+      const item = expenses.find((record) => record.id === recordId);
+      if (!item) return;
+      setDraft({
+        ...emptyDraft,
+        title: item.title,
+        date: item.date,
+        amount: String(item.amount),
+        category: categoryKeyFor(item.category),
+      });
+    } else if (kind === "fuel") {
+      const item = fuelRecords.find((record) => record.id === recordId);
+      if (!item) return;
+      setDraft({
+        ...emptyDraft,
+        title: tr("fuel"),
+        date: item.date,
+        mileage: String(item.mileage),
+        amount: String(item.amount),
+        liters: String(item.liters),
+        price: String(item.pricePerLiter),
+      });
+    } else if (kind === "document") {
+      const item = documentsList.find((record) => record.id === recordId);
+      if (!item) return;
+      setDraft({
+        ...emptyDraft,
+        title: item.title,
+        date: item.expiry,
+        detail: item.status,
+      });
+    } else {
+      const item = servicePlans.find((record) => record.id === recordId);
+      if (!item) return;
+      setDraft({
+        ...emptyDraft,
+        title: item.title,
+        mileage: String(item.remainingKm),
+      });
+    }
+    setFormKind(kind);
+  };
+
+  const cancelNativeReminder = async (reminder?: ScheduledReminder) => {
+    if (Platform.OS === "web" || !reminder?.notificationId) return;
+    try {
+      await Notifications.cancelScheduledNotificationAsync(reminder.notificationId);
+    } catch {
+      // The operating system may already have delivered or removed this notification.
+    }
+  };
+
+  const saveScheduledReminder = async (
+    target: RecordTarget,
+    scheduledAt: string,
+    requestPermission: boolean,
+  ) => {
+    const key = makeReminderKey(target.kind, target.recordId);
+    const previous = reminders.find((item) => item.key === key);
+    await cancelNativeReminder(previous);
+    let permissionGranted = false;
+    let notificationId: string | undefined;
+
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        let permission = window.Notification.permission;
+        if (permission !== "granted" && requestPermission && permission === "default") {
+          permission = await window.Notification.requestPermission();
+        }
+        permissionGranted = permission === "granted";
+      }
+    } else {
+      try {
+        let permission = await Notifications.getPermissionsAsync();
+        if (!permission.granted && requestPermission) {
+          permission = await Notifications.requestPermissionsAsync();
+        }
+        permissionGranted = permission.granted;
+        if (permissionGranted) {
+          if (Platform.OS === "android") {
+            await Notifications.setNotificationChannelAsync("sayarti-reminders", {
+              name: tr("reminders"),
+              importance: Notifications.AndroidImportance.DEFAULT,
+            });
+          }
+          notificationId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: tr("reminderNotificationTitle"),
+              body: `${tr("reminderNotificationBody")} · ${target.title}`,
+              data: { kind: target.kind, recordId: target.recordId },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: new Date(scheduledAt),
+              ...(Platform.OS === "android" ? { channelId: "sayarti-reminders" } : {}),
+            },
+          });
+        }
+      } catch {
+        permissionGranted = false;
+      }
+    }
+
+    setReminders((current) => [
+      ...current.filter((item) => item.key !== key),
+      { key, kind: target.kind, recordId: target.recordId, title: target.title, scheduledAt, notificationId },
+    ]);
+    return permissionGranted;
+  };
+
+  const openSchedule = (kind: RecordKind, recordId: string, title: string) =>
+    setScheduleTarget({ kind, recordId, title });
+
+  const chooseReminderInterval = async (days: ReminderDays) => {
+    if (!scheduleTarget) return;
+    let permissionGranted = false;
+    try {
+      permissionGranted = await saveScheduledReminder(
+        scheduleTarget,
+        reminderDateAfter(days),
+        true,
+      );
+    } catch {
+      permissionGranted = false;
+    }
+    setScheduleTarget(null);
+    showNotice(
+      permissionGranted ? tr("reminderSaved") : tr("reminderSavedInApp"),
+    );
+  };
+
+  const clearReminder = async (target: RecordTarget) => {
+    const key = makeReminderKey(target.kind, target.recordId);
+    const reminder = reminders.find((item) => item.key === key);
+    await cancelNativeReminder(reminder);
+    setReminders((current) => current.filter((item) => item.key !== key));
+    setScheduleTarget(null);
+    showNotice(tr("reminderCancelled"));
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    const snapshot = removeSnapshotRecord(
+      { maintenanceRecords, expenses, fuelRecords, documentsList, servicePlans, reminders },
+      target.kind,
+      target.recordId,
+    );
+    await cancelNativeReminder(
+      reminders.find((item) => item.key === makeReminderKey(target.kind, target.recordId)),
+    );
+    setMaintenanceRecords(snapshot.maintenanceRecords);
+    setExpenses(snapshot.expenses);
+    setFuelRecords(snapshot.fuelRecords);
+    setDocumentsList(snapshot.documentsList);
+    setServicePlans(snapshot.servicePlans);
+    setReminders(snapshot.reminders);
+    setDeleteTarget(null);
+    showNotice(tr("deletedToast"));
+  };
+
   const saveForm = () => {
+    if (!formKind) return;
+    const editing = editingTarget?.kind === formKind ? editingTarget : null;
+    const recordId = editing?.recordId ?? makeRecordId(formKind);
     const amount = Number(draft.amount.replace(/[^0-9.]/g, "")) || 0;
     const title =
       draft.title.trim() ||
-      (formKind === "maintenance"
+      (formKind === "maintenance" || formKind === "servicePlan"
         ? tr("oilChange")
         : formKind === "fuel"
           ? tr("fuel")
           : formKind === "document"
             ? tr("documentType")
             : tr("otherCategory"));
+
     if (formKind === "maintenance") {
-      setMaintenanceRecords((items) => [
-        {
-          title,
-          mileage: `${draft.mileage || vehicle.mileage} km`,
-          date: draft.date,
-          cost: amount,
-          note: invoiceAttached
-            ? `${draft.detail}${draft.detail ? " · " : ""}${tr("invoiceAdded")}`
-            : draft.detail,
-        },
-        ...items,
-      ]);
-      setExpenses((items) => [
-        { title, category: tr("serviceCategory"), amount, date: draft.date },
-        ...items,
-      ]);
+      const item: MaintenanceItem = {
+        id: recordId,
+        title,
+        mileage: `${draft.mileage || vehicle.mileage} km`,
+        date: draft.date,
+        cost: amount,
+        note: invoiceAttached
+          ? `${draft.detail}${draft.detail ? " · " : ""}${tr("invoiceAdded")}`
+          : draft.detail,
+      };
+      setMaintenanceRecords((current) =>
+        editing
+          ? current.map((record) => (record.id === recordId ? item : record))
+          : [item, ...current],
+      );
+      setExpenses((current) =>
+        editing
+          ? current.map((expense) =>
+              expense.linkedKind === "maintenance" && expense.linkedId === recordId
+                ? { ...expense, title, amount, date: draft.date }
+                : expense,
+            )
+          : [
+              {
+                id: makeRecordId("expense"),
+                title,
+                category: tr("serviceCategory"),
+                amount,
+                date: draft.date,
+                linkedKind: "maintenance",
+                linkedId: recordId,
+              },
+              ...current,
+            ],
+      );
+    } else if (formKind === "servicePlan") {
+      const item: ServicePlanItem = {
+        id: recordId,
+        title,
+        remainingKm: Number(draft.mileage) || 0,
+      };
+      setServicePlans((current) =>
+        editing
+          ? current.map((record) => (record.id === recordId ? item : record))
+          : [item, ...current],
+      );
     } else if (formKind === "expense") {
-      setExpenses((items) => [
-        { title, category: tr("otherCategory"), amount, date: draft.date },
-        ...items,
-      ]);
+      const previousExpense = editing
+        ? expenses.find((record) => record.id === recordId)
+        : undefined;
+      const item: ExpenseItem = {
+        ...(previousExpense ?? {}),
+        id: recordId,
+        title,
+        category: tr(draft.category as TranslationKey),
+        amount,
+        date: draft.date,
+      };
+      if (previousExpense?.linkedKind === "maintenance" && previousExpense.linkedId) {
+        setMaintenanceRecords((current) =>
+          current.map((record) =>
+            record.id === previousExpense.linkedId
+              ? { ...record, title, cost: amount, date: draft.date }
+              : record,
+          ),
+        );
+      } else if (previousExpense?.linkedKind === "fuel" && previousExpense.linkedId) {
+        setFuelRecords((current) =>
+          current.map((record) =>
+            record.id === previousExpense.linkedId
+              ? { ...record, amount, date: draft.date }
+              : record,
+          ),
+        );
+      }
+      setExpenses((current) =>
+        editing
+          ? current.map((record) => (record.id === recordId ? item : record))
+          : [item, ...current],
+      );
     } else if (formKind === "fuel") {
-      setFuelRecords((items) => [
-        {
-          amount,
-          liters: Number(draft.liters) || 0,
-          pricePerLiter: Number(draft.price) || 0,
-          mileage: Number(draft.mileage) || 0,
-          date: draft.date,
-        },
-        ...items,
-      ]);
-      setExpenses((items) => [
-        { title: tr("fuel"), category: tr("fuelCategory"), amount, date: draft.date },
-        ...items,
-      ]);
-    } else if (formKind === "document") {
-      setDocumentsList((items) => [
-        { title, expiry: draft.date, status: "valid" },
-        ...items,
-      ]);
+      const item: FuelItem = {
+        id: recordId,
+        amount,
+        liters: Number(draft.liters) || 0,
+        pricePerLiter: Number(draft.price) || 0,
+        mileage: Number(draft.mileage) || 0,
+        date: draft.date,
+      };
+      setFuelRecords((current) =>
+        editing
+          ? current.map((record) => (record.id === recordId ? item : record))
+          : [item, ...current],
+      );
+      setExpenses((current) =>
+        editing
+          ? current.map((expense) =>
+              expense.linkedKind === "fuel" && expense.linkedId === recordId
+                ? { ...expense, title: tr("fuel"), amount, date: draft.date }
+                : expense,
+            )
+          : [
+              {
+                id: makeRecordId("expense"),
+                title: tr("fuel"),
+                category: tr("fuelCategory"),
+                amount,
+                date: draft.date,
+                linkedKind: "fuel",
+                linkedId: recordId,
+              },
+              ...current,
+            ],
+      );
+    } else {
+      const status: DocumentItem["status"] =
+        draft.detail === "soon" || draft.detail === "stored"
+          ? draft.detail
+          : "valid";
+      const item: DocumentItem = {
+        id: recordId,
+        title,
+        expiry: draft.date,
+        status,
+      };
+      setDocumentsList((current) =>
+        editing
+          ? current.map((record) => (record.id === recordId ? item : record))
+          : [item, ...current],
+      );
+    }
+
+    const existingReminder = reminders.find(
+      (item) => item.key === makeReminderKey(formKind, recordId),
+    );
+    if (editing && existingReminder) {
+      void saveScheduledReminder(
+        { kind: formKind, recordId, title },
+        existingReminder.scheduledAt,
+        false,
+      );
     }
     setFormKind(null);
-    showNotice();
+    setEditingTarget(null);
+    showNotice(editing ? tr("updatedToast") : tr("savedToast"));
   };
 
   const openProfile = async () => {
@@ -465,7 +942,7 @@ export default function HomeScreen() {
           <Ionicons name="person-outline" size={19} color={c.ink} />
         </Pressable>
         <Pressable
-          onPress={() => showNotice(tr("notifications"))}
+          onPress={() => startTab("documents")}
           style={[
             styles.roundButton,
             { backgroundColor: c.surface, borderColor: c.line },
@@ -474,9 +951,11 @@ export default function HomeScreen() {
           accessibilityLabel={tr("notifications")}
         >
           <Ionicons name="notifications-outline" size={19} color={c.ink} />
-          <View
-            style={[styles.notificationDot, { backgroundColor: c.orange }]}
-          />
+          {reminders.length > 0 ? (
+            <View
+              style={[styles.notificationDot, { backgroundColor: c.orange }]}
+            />
+          ) : null}
         </Pressable>
       </View>
     </View>
@@ -530,7 +1009,7 @@ export default function HomeScreen() {
     </Pressable>
   );
 
-  const InfoCard = ({
+  const InfoTile = ({
     icon,
     title,
     value,
@@ -574,45 +1053,92 @@ export default function HomeScreen() {
     </Pressable>
   );
 
+  const RecordActions = ({ kind, recordId, title }: RecordTarget) => (
+    <View
+      style={[
+        styles.recordActions,
+        { flexDirection: direction, borderColor: c.line },
+      ]}
+    >
+      {[
+        {
+          label: "editRecord" as TranslationKey,
+          icon: "create-outline" as IoniconName,
+          tint: c.green,
+          action: () => beginEdit(kind, recordId),
+        },
+        {
+          label: "scheduleReminder" as TranslationKey,
+          icon: "alarm-outline" as IoniconName,
+          tint: c.blue,
+          action: () => openSchedule(kind, recordId, title),
+        },
+        {
+          label: "deleteRecord" as TranslationKey,
+          icon: "trash-outline" as IoniconName,
+          tint: "#D65345",
+          action: () => setDeleteTarget({ kind, recordId, title }),
+        },
+      ].map((item) => (
+        <Pressable
+          key={item.label}
+          accessibilityRole="button"
+          accessibilityLabel={tr(item.label)}
+          onPress={item.action}
+          style={({ pressed }) => [
+            styles.recordActionButton,
+            {
+              flexDirection: direction,
+              backgroundColor: c.surface,
+              borderColor: c.line,
+              opacity: pressed ? 0.72 : 1,
+            },
+          ]}
+        >
+          <Ionicons name={item.icon} size={15} color={item.tint} />
+          <Text style={[styles.recordActionText, { color: item.tint }]} numberOfLines={1}>
+            {tr(item.label)}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+
   const ServiceRow = ({
+    item,
     icon,
-    title,
-    distance,
     tint,
     bg,
   }: {
+    item: ServicePlanItem;
     icon: IoniconName;
-    title: string;
-    distance: string;
     tint: string;
     bg: string;
   }) => (
-    <View
-      style={[
-        styles.serviceRow,
-        {
-          flexDirection: direction,
-          backgroundColor: c.surface,
-          borderColor: c.line,
-        },
-      ]}
-    >
-      <View style={[styles.rowIcon, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={20} color={tint} />
+    <View style={{ marginBottom: 10 }}>
+      <View
+        style={[
+          styles.serviceRow,
+          {
+            flexDirection: direction,
+            backgroundColor: c.surface,
+            borderColor: c.line,
+          },
+        ]}
+      >
+        <View style={[styles.rowIcon, { backgroundColor: bg }]}>
+          <Ionicons name={icon} size={20} color={tint} />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
+            {localizeDemoLabel(item.title)}
+          </Text>
+          <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
+            {tr("inDistance")} {item.remainingKm.toLocaleString()} {tr("km")}
+          </Text>
+        </View>
       </View>
-      <View style={{ flex: 1, gap: 3 }}>
-        <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
-          {title}
-        </Text>
-        <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
-          {distance}
-        </Text>
-      </View>
-      <Ionicons
-        name={isRTL ? "chevron-back" : "chevron-forward"}
-        size={18}
-        color={c.muted}
-      />
+      <RecordActions kind="servicePlan" recordId={item.id} title={localizeDemoLabel(item.title)} />
     </View>
   );
 
@@ -642,33 +1168,35 @@ export default function HomeScreen() {
     const tint = item.status === "soon" ? c.orange : c.green;
     const soft = item.status === "soon" ? c.orangeSoft : c.greenSoft;
     return (
-      <View
-        key={rowKey}
-        style={[
-          styles.documentRow,
-          {
-            flexDirection: direction,
-            backgroundColor: c.surface,
-            borderColor: c.line,
-          },
-        ]}
-      >
-        <View style={[styles.rowIcon, { backgroundColor: soft }]}>
-          <Ionicons name={iconName} size={20} color={tint} />
+      <View key={rowKey} style={{ marginBottom: 10 }}>
+        <View
+          style={[
+            styles.documentRow,
+            {
+              flexDirection: direction,
+              backgroundColor: c.surface,
+              borderColor: c.line,
+            },
+          ]}
+        >
+          <View style={[styles.rowIcon, { backgroundColor: soft }]}>
+            <Ionicons name={iconName} size={20} color={tint} />
+          </View>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
+              {localizeDemoLabel(item.title)}
+            </Text>
+            <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
+              {item.expiry === "—"
+                ? statusText
+                : `${tr("expires")} ${item.expiry}`}
+            </Text>
+          </View>
+          <View style={[styles.statusPill, { backgroundColor: soft }]}>
+            <Text style={[styles.statusText, { color: tint }]}>{statusText}</Text>
+          </View>
         </View>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
-            {localizeDemoLabel(item.title)}
-          </Text>
-          <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
-            {item.expiry === "—"
-              ? statusText
-              : `${tr("expires")} ${item.expiry}`}
-          </Text>
-        </View>
-        <View style={[styles.statusPill, { backgroundColor: soft }]}>
-          <Text style={[styles.statusText, { color: tint }]}>{statusText}</Text>
-        </View>
+        <RecordActions kind="document" recordId={item.id} title={localizeDemoLabel(item.title)} />
       </View>
     );
   };
@@ -691,30 +1219,60 @@ export default function HomeScreen() {
           ? "construct-outline"
           : "cube-outline";
     return (
-      <View
-        key={rowKey}
-        style={[
-          styles.expenseRow,
-          { flexDirection: direction, borderBottomColor: c.line },
-        ]}
-      >
-        <View style={[styles.rowIcon, { backgroundColor: c.surfaceSoft }]}>
-          <Ionicons name={iconName} size={19} color={c.ink} />
+      <View key={rowKey} style={{ borderBottomColor: c.line, borderBottomWidth: 1, paddingVertical: 10 }}>
+        <View style={[styles.expenseRow, { flexDirection: direction, borderBottomColor: "transparent" }]}>
+          <View style={[styles.rowIcon, { backgroundColor: c.surfaceSoft }]}>
+            <Ionicons name={iconName} size={19} color={c.ink} />
+          </View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
+              {localizeDemoLabel(item.title)}
+            </Text>
+            <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
+              {item.date} · {localizeDemoLabel(item.category)}
+            </Text>
+          </View>
+          <Text style={[styles.moneySmall, { color: c.ink }, textDirection]}>
+            {money(item.amount)}
+          </Text>
+        </View>
+        <RecordActions
+          kind="expense"
+          recordId={item.id}
+          title={localizeDemoLabel(item.title)}
+        />
+      </View>
+    );
+  };
+
+  const FuelRow = ({ item, rowKey }: { item: FuelItem; rowKey: string }) => (
+    <View
+      key={rowKey}
+      style={{
+        paddingVertical: 10,
+        borderBottomColor: c.line,
+        borderBottomWidth: 1,
+      }}
+    >
+      <View style={[styles.expenseRow, { flexDirection: direction, borderBottomColor: "transparent" }]}>
+        <View style={[styles.rowIcon, { backgroundColor: c.blueSoft }]}>
+          <Ionicons name="flash-outline" size={19} color={c.blue} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
-            {localizeDemoLabel(item.title)}
+            {tr("fuel")} · {item.liters} L
           </Text>
           <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
-            {item.date} · {localizeDemoLabel(item.category)}
+            {item.date} · {item.pricePerLiter.toFixed(2)} {tr("priceShort")}/L · {item.mileage.toLocaleString()} {tr("km")}
           </Text>
         </View>
         <Text style={[styles.moneySmall, { color: c.ink }, textDirection]}>
           {money(item.amount)}
         </Text>
       </View>
-    );
-  };
+      <RecordActions kind="fuel" recordId={item.id} title={tr("fuel")} />
+    </View>
+  );
 
   const QuickAction = ({
     icon,
@@ -850,7 +1408,7 @@ export default function HomeScreen() {
       </Pressable>
 
       <View style={[styles.statRow, { flexDirection: direction }]}>
-        {InfoCard({
+        {InfoTile({
           icon: "wallet-outline",
           title: tr("monthlySpend"),
           value: money(monthlyTotal),
@@ -858,7 +1416,7 @@ export default function HomeScreen() {
           bg: c.greenSoft,
           onPress: () => startTab("expenses"),
         })}
-        {InfoCard({
+        {InfoTile({
           icon: "speedometer-outline",
           title: tr("lastFuel"),
           value: money(fuelEntry.amount),
@@ -939,7 +1497,7 @@ export default function HomeScreen() {
               {tr("insurance")}
             </Text>
             <Text style={[styles.rowSub, { color: c.muted }, textDirection]}>
-              {tr("daysLeft")}
+              {insuranceDaysLabel}
             </Text>
           </View>
           <View style={[styles.statusPill, { backgroundColor: c.redSoft }]}>
@@ -967,7 +1525,7 @@ export default function HomeScreen() {
               {tr("annualSpend")}
             </Text>
             <Text style={[styles.yearTotal, { color: c.ink }, textDirection]}>
-              87,400 {tr("priceShort")}
+              {money(annualTotal)}
             </Text>
           </View>
           <View style={[styles.roundIcon, { backgroundColor: c.greenSoft }]}>
@@ -975,26 +1533,28 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.barTrack}>
-          <View
-            style={[styles.barFill, { width: "74%", backgroundColor: c.green }]}
-          />
-          <View
-            style={[styles.barFill, { width: "17%", backgroundColor: c.blue }]}
-          />
-          <View
-            style={[styles.barFill, { width: "9%", backgroundColor: c.orange }]}
-          />
+          {annualCategoryBreakdown.map((item) => (
+            <View
+              key={item.key}
+              style={[
+                styles.barFill,
+                {
+                  width: `${annualTotal > 0 ? (item.amount / annualTotal) * 100 : 0}%`,
+                  backgroundColor: item.tint,
+                },
+              ]}
+            />
+          ))}
         </View>
         <View style={[styles.legendRow, { flexDirection: direction }]}>
-          <Text style={[styles.legendText, { color: c.muted }, textDirection]}>
-            {tr("serviceCategory")} 21,500
-          </Text>
-          <Text style={[styles.legendText, { color: c.muted }, textDirection]}>
-            {tr("fuelCategory")} 52,000
-          </Text>
-          <Text style={[styles.legendText, { color: c.muted }, textDirection]}>
-            {tr("otherCategory")} 13,900
-          </Text>
+          {annualCategoryBreakdown.map((item) => (
+            <Text
+              key={item.key}
+              style={[styles.legendText, { color: c.muted }, textDirection]}
+            >
+              {tr(item.key)} {money(item.amount)}
+            </Text>
+          ))}
         </View>
         <View
           style={[
@@ -1043,7 +1603,9 @@ export default function HomeScreen() {
               {tr("lastService")}
             </Text>
             <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
-              {maintenanceRecords[0]?.title ?? tr("oilChange")}
+              {maintenanceRecords[0]
+                ? localizeDemoLabel(maintenanceRecords[0].title)
+                : tr("oilChange")}
             </Text>
           </View>
           <Text style={[styles.moneySmall, { color: c.green }, textDirection]}>
@@ -1058,28 +1620,26 @@ export default function HomeScreen() {
             {maintenanceRecords[0]?.mileage ?? "185,200 km"}
           </Text>
         </View>
+        {maintenanceRecords[0] ? (
+          <RecordActions
+            kind="maintenance"
+            recordId={maintenanceRecords[0].id}
+            title={localizeDemoLabel(maintenanceRecords[0].title)}
+          />
+        ) : null}
       </View>
       {SectionTitle({ title: tr("upcoming") })}
-      {ServiceRow({
-        icon: "water-outline",
-        title: tr("oilChange"),
-        distance: `${tr("inDistance")} 1,200 ${tr("km")}`,
-        tint: c.orange,
-        bg: c.orangeSoft,
+      {servicePlans.map((item, index) => {
+        const visuals = [
+          { icon: "water-outline" as IoniconName, tint: c.orange, bg: c.orangeSoft },
+          { icon: "options-outline" as IoniconName, tint: c.blue, bg: c.blueSoft },
+          { icon: "disc-outline" as IoniconName, tint: c.purple, bg: c.surfaceSoft },
+        ][index % 3]!;
+        return ServiceRow({ item, ...visuals });
       })}
-      {ServiceRow({
-        icon: "options-outline",
-        title: tr("airFilter"),
-        distance: `${tr("inDistance")} 5,000 ${tr("km")}`,
-        tint: c.blue,
-        bg: c.blueSoft,
-      })}
-      {ServiceRow({
-        icon: "disc-outline",
-        title: tr("tires"),
-        distance: `${tr("inDistance")} 3,000 ${tr("km")}`,
-        tint: c.purple,
-        bg: c.surfaceSoft,
+      {PrimaryButton({
+        label: tr("addServicePlan"),
+        onPress: () => openForm("servicePlan"),
       })}
       {SectionTitle({ title: tr("allServices") })}
       <View
@@ -1090,12 +1650,15 @@ export default function HomeScreen() {
       >
         {maintenanceRecords.map((item, index) =>
           ExpenseRow({
-            rowKey: `${item.title}-${index}`,
+            rowKey: item.id || `${item.title}-${index}`,
             item: {
+              id: item.id,
               title: item.title,
               category: tr("serviceCategory"),
               amount: item.cost,
               date: item.date,
+              linkedKind: "maintenance",
+              linkedId: item.id,
             },
           }),
         )}
@@ -1115,7 +1678,7 @@ export default function HomeScreen() {
             {tr("expenses")}
           </Text>
           <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
-            {tr("monthly")}, 2026
+            {tr("monthly")}, {calendarNow.toLocaleDateString(numberLocale, { month: "long", year: "numeric" })}
           </Text>
         </View>
         <View style={[styles.roundIcon, { backgroundColor: c.greenSoft }]}>
@@ -1131,38 +1694,13 @@ export default function HomeScreen() {
         </Text>
         <View style={[styles.heroMeta, { flexDirection: direction }]}>
           <Text style={styles.heroMetaText}>{tr("yearlyTotal")}</Text>
-          <Text style={styles.heroMetaText}>{money(87400)}</Text>
+          <Text style={styles.heroMetaText}>{money(annualTotal)}</Text>
         </View>
       </View>
       {SectionTitle({ title: tr("category") })}
-      {[
-        {
-          label: tr("fuelCategory"),
-          amount: 52000,
-          icon: "flash-outline" as IoniconName,
-          tint: c.blue,
-        },
-        {
-          label: tr("serviceCategory"),
-          amount: 21500,
-          icon: "construct-outline" as IoniconName,
-          tint: c.green,
-        },
-        {
-          label: tr("partsCategory"),
-          amount: 8900,
-          icon: "cube-outline" as IoniconName,
-          tint: c.purple,
-        },
-        {
-          label: tr("otherCategory"),
-          amount: 5000,
-          icon: "ellipsis-horizontal" as IoniconName,
-          tint: c.orange,
-        },
-      ].map((item) => (
+      {monthlyCategoryBreakdown.map((item) => (
         <View
-          key={item.label}
+          key={item.key}
           style={[
             styles.categoryRow,
             {
@@ -1178,7 +1716,7 @@ export default function HomeScreen() {
           <Text
             style={[styles.rowTitle, { color: c.ink, flex: 1 }, textDirection]}
           >
-            {item.label}
+            {tr(item.key)}
           </Text>
           <View
             style={{
@@ -1191,7 +1729,7 @@ export default function HomeScreen() {
           >
             <View
               style={{
-                width: `${Math.max(12, Math.round(item.amount / 874))}%`,
+                width: `${monthlyTotal > 0 ? Math.min(100, Math.round((item.amount / monthlyTotal) * 100)) : 0}%`,
                 height: 6,
                 backgroundColor: item.tint,
                 borderRadius: 9,
@@ -1212,11 +1750,26 @@ export default function HomeScreen() {
       >
         {expenses.map((item, index) =>
           ExpenseRow({
-            rowKey: `${item.title}-${item.date}-${index}`,
+            rowKey: item.id || `${item.title}-${item.date}-${index}`,
             item: item,
           }),
         )}
       </View>
+      {SectionTitle({ title: tr("fuel") })}
+      <View
+        style={[
+          styles.listCard,
+          { backgroundColor: c.surface, borderColor: c.line },
+        ]}
+      >
+        {fuelRecords.map((item, index) =>
+          FuelRow({ item, rowKey: item.id || `fuel-${index}` }),
+        )}
+      </View>
+      {PrimaryButton({
+        label: tr("addFuelRecord"),
+        onPress: () => openForm("fuel"),
+      })}
       {PrimaryButton({
         label: tr("addExpense"),
         onPress: () => openForm("expense"),
@@ -1257,13 +1810,67 @@ export default function HomeScreen() {
             textDirection,
           ]}
         >
-          {tr("insurance")} · {tr("daysLeft")}
+          {tr("insurance")} · {insuranceDaysLabel}
         </Text>
       </View>
       {SectionTitle({ title: tr("vehicle") })}
       {documentsList.map((item, index) =>
-        DocumentRow({ item: item, rowKey: `${item.title}-${index}` }),
+        DocumentRow({ item: item, rowKey: item.id || `${item.title}-${index}` }),
       )}
+      {SectionTitle({ title: tr("scheduledReminders") })}
+      <View
+        style={[
+          styles.listCard,
+          { backgroundColor: c.surface, borderColor: c.line },
+        ]}
+      >
+        {reminders.length === 0 ? (
+          <Text style={[styles.bodyText, { color: c.muted, padding: 14 }, textDirection]}>
+            {tr("noScheduledReminders")}
+          </Text>
+        ) : (
+          reminders.map((item) => (
+            <View
+              key={item.key}
+              style={[
+                styles.scheduledReminderRow,
+                { flexDirection: direction, borderBottomColor: c.line },
+              ]}
+            >
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.rowTitle, { color: c.ink }, textDirection]}>
+                  {item.title}
+                </Text>
+                <Text style={[styles.rowSub, { color: item.triggeredAt ? c.orange : c.muted }, textDirection]}>
+                  {item.triggeredAt
+                    ? tr("reminderDueNow")
+                    : new Date(item.scheduledAt).toLocaleString(
+                        language === "ar" ? "ar-DZ" : language === "fr" ? "fr-DZ" : "en-DZ",
+                        { dateStyle: "medium", timeStyle: "short" },
+                      )}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr("removeReminder")}
+                onPress={() =>
+                  clearReminder({
+                    kind: item.kind,
+                    recordId: item.recordId,
+                    title: item.title,
+                  })
+                }
+                style={[styles.reminderCancelButton, { borderColor: c.line }]}
+              >
+                <Ionicons name="close-circle-outline" size={17} color="#D65345" />
+                <Text style={[styles.reminderCancelText, { color: "#D65345" }]}>
+                  {tr("removeReminder")}
+                </Text>
+              </Pressable>
+            </View>
+          ))
+        )}
+      </View>
       <View style={[styles.noteCard, { backgroundColor: c.surfaceSoft }]}>
         <Ionicons name="lock-closed-outline" size={18} color={c.muted} />
         <Text style={[styles.noteText, { color: c.muted }, textDirection]}>
@@ -1931,14 +2538,17 @@ export default function HomeScreen() {
     return SettingsContent();
   };
 
-  const formTitle =
-    formKind === "maintenance"
+  const formTitle = editingTarget
+    ? tr("editRecord")
+    : formKind === "maintenance"
       ? tr("formMaintenance")
-      : formKind === "expense"
-        ? tr("formExpense")
-        : formKind === "fuel"
-          ? tr("formFuel")
-          : tr("formDocument");
+      : formKind === "servicePlan"
+        ? tr("formServicePlan")
+        : formKind === "expense"
+          ? tr("formExpense")
+          : formKind === "fuel"
+            ? tr("formFuel")
+            : tr("formDocument");
   const formFields: {
     key: keyof Draft;
     label: TranslationKey;
@@ -1954,12 +2564,17 @@ export default function HomeScreen() {
         ]
       : formKind === "expense"
         ? [
-            { key: "title", label: "category" },
+            { key: "title", label: "expenseName" },
             { key: "amount", label: "amount", numeric: true },
             { key: "date", label: "serviceDate" },
             { key: "detail", label: "notes" },
           ]
-        : formKind === "fuel"
+        : formKind === "servicePlan"
+          ? [
+              { key: "title", label: "servicePlanTitle" },
+              { key: "mileage", label: "remainingDistance", numeric: true },
+            ]
+          : formKind === "fuel"
           ? [
               { key: "amount", label: "amount", numeric: true },
               { key: "liters", label: "litersCount", numeric: true },
@@ -1970,7 +2585,6 @@ export default function HomeScreen() {
           : [
               { key: "title", label: "documentType" },
               { key: "date", label: "expiryDate" },
-              { key: "detail", label: "notes" },
             ];
 
   const showTabs =
@@ -2126,6 +2740,74 @@ export default function HomeScreen() {
                   item.numeric,
                 ),
               )}
+              {formKind === "expense" ? (
+                <View style={{ gap: 8, marginBottom: 14 }}>
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+                    {tr("expenseCategory")}
+                  </Text>
+                  <View style={{ flexDirection: direction, flexWrap: "wrap", gap: 8 }}>
+                    {(["fuelCategory", "serviceCategory", "partsCategory", "otherCategory"] as const).map((category) => {
+                      const selected = draft.category === category;
+                      return (
+                        <Pressable
+                          key={category}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => setDraft((current) => ({ ...current, category }))}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 9,
+                            borderRadius: 18,
+                            backgroundColor: selected ? c.greenSoft : c.bg,
+                            borderWidth: 1,
+                            borderColor: selected ? c.green : c.line,
+                          }}
+                        >
+                          <Text style={{ color: selected ? c.green : c.ink, fontSize: 12, fontWeight: "700" }}>
+                            {tr(category)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+              {formKind === "document" ? (
+                <View style={{ gap: 8, marginBottom: 14 }}>
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+                    {tr("documentStatus")}
+                  </Text>
+                  <View style={{ flexDirection: direction, flexWrap: "wrap", gap: 8 }}>
+                    {([
+                      { value: "valid", label: "valid" },
+                      { value: "soon", label: "dueSoon" },
+                      { value: "stored", label: "stored" },
+                    ] as const).map((status) => {
+                      const selected = draft.detail === status.value;
+                      return (
+                        <Pressable
+                          key={status.value}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => setDraft((current) => ({ ...current, detail: status.value }))}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 9,
+                            borderRadius: 18,
+                            backgroundColor: selected ? c.greenSoft : c.bg,
+                            borderWidth: 1,
+                            borderColor: selected ? c.green : c.line,
+                          }}
+                        >
+                          <Text style={{ color: selected ? c.green : c.ink, fontSize: 12, fontWeight: "700" }}>
+                            {tr(status.label)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
               {formKind === "maintenance" ? (
                 <Pressable
                   accessibilityRole="button"
@@ -2171,6 +2853,107 @@ export default function HomeScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <Modal
+        visible={!!scheduleTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setScheduleTarget(null)}
+      >
+        <View style={[styles.modalBackdrop, { justifyContent: "center", padding: 20 }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            accessibilityRole="button"
+            accessibilityLabel={tr("close")}
+            onPress={() => setScheduleTarget(null)}
+          />
+          <View style={{ width: "100%", maxWidth: 520, alignSelf: "center", borderRadius: 22, padding: 20, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, gap: 14 }}>
+            <Text style={[styles.modalTitle, { color: c.ink }, textDirection]}>
+              {tr("scheduleReminder")}
+            </Text>
+            <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
+              {scheduleTarget?.title}
+            </Text>
+            <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+              {tr("remindAfter")}
+            </Text>
+            <View style={{ flexDirection: direction, flexWrap: "wrap", gap: 9 }}>
+              {reminderIntervals.map((days) => {
+                const label: TranslationKey =
+                  days === 1
+                    ? "remindOneDay"
+                    : days === 3
+                      ? "remindThreeDays"
+                      : days === 7
+                        ? "remindOneWeek"
+                        : "remindOneMonth";
+                return (
+                  <Pressable
+                    key={days}
+                    accessibilityRole="button"
+                    onPress={() => chooseReminderInterval(days)}
+                    style={[styles.authButton, { backgroundColor: c.green, flex: 1, minWidth: 100 }]}
+                  >
+                    <Text style={styles.authButtonText}>{tr(label)}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {scheduleTarget && reminders.find((item) => item.key === makeReminderKey(scheduleTarget.kind, scheduleTarget.recordId)) ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => clearReminder(scheduleTarget)}
+                style={[styles.recordActionButton, { flexDirection: direction, backgroundColor: c.surface, borderColor: c.line, alignSelf: "flex-start" }]}
+              >
+                <Ionicons name="close-circle-outline" size={16} color="#D65345" />
+                <Text style={[styles.recordActionText, { color: "#D65345" }]}>
+                  {tr("removeReminder")}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={!!deleteTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteTarget(null)}
+      >
+        <View style={[styles.modalBackdrop, { justifyContent: "center", padding: 20 }]}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            accessibilityRole="button"
+            accessibilityLabel={tr("cancel")}
+            onPress={() => setDeleteTarget(null)}
+          />
+          <View style={{ width: "100%", maxWidth: 520, alignSelf: "center", borderRadius: 22, padding: 20, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, gap: 12 }}>
+            <Text style={[styles.modalTitle, { color: c.ink }, textDirection]}>
+              {tr("deleteRecord")}
+            </Text>
+            <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
+              {deleteTarget?.title} · {tr("deleteConfirm")}
+            </Text>
+            <View style={{ flexDirection: direction, gap: 10 }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setDeleteTarget(null)}
+                style={[styles.authButton, { backgroundColor: c.surfaceSoft, borderWidth: 1, borderColor: c.line, flex: 1 }]}
+              >
+                <Text style={[styles.recordActionText, { color: c.ink }]}>
+                  {tr("cancel")}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={confirmDelete}
+                style={[styles.authButton, { backgroundColor: "#D65345", flex: 1 }]}
+              >
+                <Text style={styles.authButtonText}>{tr("deleteRecord")}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2191,6 +2974,41 @@ const styles = StyleSheet.create({
   brandName: { fontSize: 17, fontWeight: "800", letterSpacing: -0.4 },
   eyebrow: { fontSize: 10, fontWeight: "600" },
   headerActions: { alignItems: "center", gap: 8 },
+  recordActions: {
+    flexWrap: "wrap",
+    gap: 7,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  recordActionButton: {
+    minHeight: 32,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+  recordActionText: { fontSize: 10, fontWeight: "800" },
+  scheduledReminderRow: {
+    padding: 12,
+    gap: 9,
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  reminderCancelButton: {
+    minHeight: 31,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  reminderCancelText: { fontSize: 9, fontWeight: "700" },
   roundButton: {
     width: 38,
     height: 38,
