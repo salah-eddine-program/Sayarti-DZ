@@ -20,12 +20,19 @@ export type RecordKind =
   | "document"
   | "servicePlan";
 
+export const reminderSoundIds = ["default", "soft", "bell", "alarm"] as const;
+export type ReminderSoundId = (typeof reminderSoundIds)[number];
+
+export const isReminderSoundId = (value: unknown): value is ReminderSoundId =>
+  typeof value === "string" && reminderSoundIds.includes(value as ReminderSoundId);
+
 export type ScheduledReminder = {
   key: string;
   kind: RecordKind;
   recordId: string;
   title: string;
   scheduledAt: string;
+  soundId?: ReminderSoundId;
   notificationId?: string;
   triggeredAt?: string;
 };
@@ -105,6 +112,38 @@ export const parseRecordDate = (value: string): Date | null => {
 
   const timestamp = Date.parse(trimmed);
   return Number.isNaN(timestamp) ? null : new Date(timestamp);
+};
+
+const padTwoDigits = (value: number) => String(value).padStart(2, "0");
+
+export const formatLocalDateInput = (date: Date): string =>
+  `${date.getFullYear()}-${padTwoDigits(date.getMonth() + 1)}-${padTwoDigits(date.getDate())}`;
+
+export const formatLocalTimeInput = (date: Date): string =>
+  `${padTwoDigits(date.getHours())}:${padTwoDigits(date.getMinutes())}`;
+
+export const parseLocalDateTime = (dateValue: string, timeValue: string): Date | null => {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue.trim());
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeValue.trim());
+  if (!dateMatch || !timeMatch) return null;
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (year < 1000 || year > 9999 || hour > 23 || minute > 59) return null;
+
+  const result = new Date(0);
+  result.setFullYear(year, month - 1, day);
+  result.setHours(hour, minute, 0, 0);
+  return result.getFullYear() === year &&
+    result.getMonth() === month - 1 &&
+    result.getDate() === day &&
+    result.getHours() === hour &&
+    result.getMinutes() === minute
+    ? result
+    : null;
 };
 
 export const isInCalendarMonth = (
@@ -207,14 +246,20 @@ export const parseRecordsSnapshot = (raw: string | null): RecordsSnapshot => {
     (item) => isString(item.title) && isFiniteNumber(item.remainingKm),
   );
   const reminders = Array.isArray(parsed.reminders)
-    ? parsed.reminders.filter(isObject).filter((item) =>
-        isString(item.key) &&
-        recordKinds.includes(item.kind as RecordKind) &&
-        isString(item.recordId) &&
-        isString(item.title) &&
-        isString(item.scheduledAt) &&
-        Number.isFinite(Date.parse(item.scheduledAt)),
-      ) as unknown as ScheduledReminder[]
+    ? (parsed.reminders
+        .filter(isObject)
+        .filter((item) =>
+          isString(item.key) &&
+          recordKinds.includes(item.kind as RecordKind) &&
+          isString(item.recordId) &&
+          isString(item.title) &&
+          isString(item.scheduledAt) &&
+          Number.isFinite(Date.parse(item.scheduledAt)),
+        )
+        .map((item) => ({
+          ...item,
+          soundId: isReminderSoundId(item.soundId) ? item.soundId : "default",
+        })) as unknown as ScheduledReminder[])
     : [];
 
   return {

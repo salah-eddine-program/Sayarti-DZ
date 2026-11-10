@@ -47,6 +47,7 @@ jobs:
         working-directory: mobile-expo
         run: pnpm exec expo prebuild --platform android --non-interactive --no-install
         env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ vars.SAYARTI_API_BASE_URL }}
           CI: "1"
 
       - name: Build Android debug APK

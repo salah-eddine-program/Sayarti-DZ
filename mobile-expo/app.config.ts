@@ -26,6 +26,25 @@ const bundleId =
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "";
+if (apiBaseUrl) {
+  let parsedApiBaseUrl: URL;
+  try {
+    parsedApiBaseUrl = new URL(apiBaseUrl);
+  } catch {
+    throw new Error("EXPO_PUBLIC_API_BASE_URL must be an HTTPS URL.");
+  }
+  if (
+    parsedApiBaseUrl.protocol !== "https:" ||
+    parsedApiBaseUrl.username ||
+    parsedApiBaseUrl.password ||
+    parsedApiBaseUrl.search ||
+    parsedApiBaseUrl.hash
+  ) {
+    throw new Error("EXPO_PUBLIC_API_BASE_URL must be a credential-free HTTPS URL.");
+  }
+}
+
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "سيارتي DZ — Sayarti DZ",
@@ -55,7 +74,7 @@ const publicRuntime = {
     process.env.VITE_APP_ID ??
     process.env.EXPO_PUBLIC_APP_ID ??
     "",
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+  apiBaseUrl: apiBaseUrl.replace(/\/$/, ""),
 };
 
 const config: ExpoConfig = {
@@ -120,10 +139,29 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "@react-native-community/datetimepicker",
+      {
+        android: {
+          datePicker: {
+            colorAccent: { light: "#114722", dark: "#91C84A" },
+          },
+          timePicker: {
+            headerBackground: { light: "#02281C", dark: "#02281C" },
+            numbersSelectorColor: { light: "#FED439", dark: "#FED439" },
+          },
+        },
+      },
+    ],
+    [
       "expo-notifications",
       {
         defaultChannel: "sayarti-reminders",
         color: "#0B4A2A",
+        sounds: [
+          "./assets/notifications/sayarti-soft.wav",
+          "./assets/notifications/sayarti-bell.wav",
+          "./assets/notifications/sayarti-alarm.wav",
+        ],
       },
     ],
     [

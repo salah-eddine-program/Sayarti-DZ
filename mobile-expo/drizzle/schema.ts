@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { index, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,43 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+export const sayartiAccounts = mysqlTable("sayarti_accounts", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  firstName: varchar("firstName", { length: 100 }).notNull(),
+  lastName: varchar("lastName", { length: 100 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const sayartiEmailChallenges = mysqlTable(
+  "sayarti_email_challenges",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    email: varchar("email", { length: 320 }).notNull(),
+    purpose: mysqlEnum("purpose", ["signup", "login"]).notNull(),
+    codeHash: varchar("codeHash", { length: 64 }).notNull(),
+    attempts: int("attempts").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+    consumedAt: timestamp("consumedAt"),
+  },
+  (table) => ({
+    emailCreatedAt: index("sayarti_challenges_email_created_idx").on(
+      table.email,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const sayartiSessions = mysqlTable(
+  "sayarti_sessions",
+  {
+    tokenHash: varchar("tokenHash", { length: 64 }).primaryKey(),
+    accountId: varchar("accountId", { length: 36 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  (table) => ({
+    accountId: index("sayarti_sessions_account_idx").on(table.accountId),
+  }),
+);

@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import { BlockList, isIP } from "node:net";
 
 const LOOPBACK_IPS = new BlockList();
+const PUBLISHED_SAYARTI_WEB_ORIGIN = "https://salah-eddine-program.github.io";
 LOOPBACK_IPS.addSubnet("127.0.0.0", 8, "ipv4");
 LOOPBACK_IPS.addAddress("::1", "ipv6");
 LOOPBACK_IPS.addSubnet("::ffff:127.0.0.0", 104, "ipv6");
@@ -28,7 +29,7 @@ function pairedPreviewOrigin(packagerOrigin: string): string | null {
 }
 
 export function trustedExpoWebOrigins(): Set<string> {
-  const origins = new Set<string>();
+  const origins = new Set<string>([PUBLISHED_SAYARTI_WEB_ORIGIN]);
   const packager = configuredOrigin("EXPO_PACKAGER_PROXY_URL");
   const preview = configuredOrigin("EXPO_WEB_PREVIEW_URL");
   // Loopback origins are request-local below. Never put one in this process-wide set: the

@@ -73,7 +73,22 @@ describe("Mobile API origin and cookie isolation", () => {
     expect([...trustedExpoWebOrigins()].sort()).toEqual([
       "https://8081-sandbox.region.preview.example.test",
       "https://8328-sandbox.region.preview.example.test",
+      "https://salah-eddine-program.github.io",
     ]);
+  });
+
+  it("allows the published Sayarti GitHub Pages origin", async () => {
+    const base = await testServer(
+      true,
+      new Set(["https://salah-eddine-program.github.io"]),
+    );
+    const response = await fetch(`${base}/read`, {
+      headers: { Origin: "https://salah-eddine-program.github.io" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "https://salah-eddine-program.github.io",
+    );
   });
 
   it.each(["GET", "POST", "OPTIONS"])(
@@ -159,7 +174,9 @@ describe("Mobile API origin and cookie isolation", () => {
     const previousPackager = process.env.EXPO_PACKAGER_PROXY_URL;
     try {
       process.env.EXPO_PACKAGER_PROXY_URL = origin;
-      expect([...trustedExpoWebOrigins()]).toEqual([]);
+      expect([...trustedExpoWebOrigins()]).toEqual([
+        "https://salah-eddine-program.github.io",
+      ]);
       const base = await testServer(
         false,
         new Set([origin]),

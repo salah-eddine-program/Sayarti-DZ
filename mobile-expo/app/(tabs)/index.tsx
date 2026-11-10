@@ -24,6 +24,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { BrandMark } from "@/components/sayarti/BrandMark";
+import { ReminderDateTimePicker } from "@/components/sayarti/ReminderDateTimePicker";
 import {
   initialDocuments,
   initialExpenses,
@@ -44,11 +45,10 @@ import {
   isInCalendarYear,
   parseRecordDate,
   parseRecordsSnapshot,
-  reminderDateAfter,
-  reminderIntervals,
+  reminderSoundIds,
   removeSnapshotRecord,
   type RecordKind,
-  type ReminderDays,
+  type ReminderSoundId,
   type ScheduledReminder,
 } from "@/lib/sayarti/records";
 import {
@@ -64,6 +64,13 @@ import {
   type Language,
   type TranslationKey,
 } from "@/lib/sayarti/i18n";
+import {
+  EmailAuthError,
+  logoutEmailSession,
+  requestEmailCode,
+  restoreEmailSession,
+  verifyEmailCode,
+} from "@/lib/sayarti/email-auth";
 
 type Page =
   | "home"
@@ -158,11 +165,54 @@ const emptyDraft: Draft = {
   category: "otherCategory",
 };
 
+const reminderSoundFiles: Record<ReminderSoundId, string> = {
+  default: "default",
+  soft: "sayarti-soft.wav",
+  bell: "sayarti-bell.wav",
+  alarm: "sayarti-alarm.wav",
+};
+
+const reminderSoundTranslationKeys: Record<ReminderSoundId, TranslationKey> = {
+  default: "toneDefault",
+  soft: "toneSoft",
+  bell: "toneBell",
+  alarm: "toneAlarm",
+};
+
 const todayAsDmy = () => {
   const today = new Date();
   const day = String(today.getDate()).padStart(2, "0");
   const month = String(today.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}/${today.getFullYear()}`;
+};
+
+const suggestedReminderDateTime = () => {
+  const date = new Date();
+  date.setHours(date.getHours() + 1, 0, 0, 0);
+  return date;
+};
+
+const emailAuthErrorKey = (error: unknown): TranslationKey => {
+  const code = error instanceof EmailAuthError ? error.code : "";
+  const messages: Record<string, TranslationKey> = {
+    invalid_email: "invalidEmail",
+    email_in_use: "emailInUse",
+    incorrect_code: "incorrectCode",
+    invalid_or_expired_code: "expiredCode",
+    too_many_attempts: "tooManyAttempts",
+    resend_too_soon: "resendTooSoon",
+    account_not_found: "accountNotFound",
+    email_sender_unavailable: "emailUnavailable",
+    email_delivery_failed: "emailDeliveryFailed",
+    api_unavailable: "apiUnavailable",
+    network_error: "networkError",
+    auth_service_unavailable: "authServiceUnavailable",
+    request_limit: "requestLimit",
+    profile_required: "profileIncomplete",
+    invalid_request: "verificationError",
+    storage_unavailable: "profileSaveError",
+  };
+  return messages[code] ?? "verificationError";
 };
 
 export default function HomeScreen() {
@@ -179,6 +229,13 @@ export default function HomeScreen() {
     fuel: "diesel",
     mileage: "",
   });
+  const [emailAddress, setEmailAddress] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [authStep, setAuthStep] = useState<"details" | "code">("details");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [resendCountdown, setResendCountdown] = useState(0);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [registrationError, setRegistrationError] = useState("");
   const [accountProfileLoaded, setAccountProfileLoaded] = useState(false);
   const [language, setLanguage] = useState<Language>("ar");
@@ -192,6 +249,14 @@ export default function HomeScreen() {
   const [deleteTarget, setDeleteTarget] = useState<RecordTarget | null>(null);
   const [scheduleTarget, setScheduleTarget] =
     useState<RecordTarget | null>(null);
+  const [reminderDateTime, setReminderDateTime] = useState<Date>(
+    suggestedReminderDateTime,
+  );
+  const [selectedReminderSound, setSelectedReminderSound] =
+    useState<ReminderSoundId>("default");
+  const [scheduleInputValid, setScheduleInputValid] = useState(true);
+  const [scheduleError, setScheduleError] = useState("");
+  const [scheduleOpenId, setScheduleOpenId] = useState(0);
   const [invoiceAttached, setInvoiceAttached] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [notice, setNotice] = useState("");
@@ -322,14 +387,18 @@ export default function HomeScreen() {
   const fuelEntry = fuelRecords[0] ?? initialFuel[0];
 
   useEffect(() => {
-    AsyncStorage.multiGet([
-      "sayarti.language",
-      "sayarti.darkMode",
-      "sayarti.profileLink",
-      "sayarti.accountProfile",
-      "sayarti.records.v1",
-    ])
-      .then((values) => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const values = await AsyncStorage.multiGet([
+          "sayarti.language",
+          "sayarti.darkMode",
+          "sayarti.profileLink",
+          "sayarti.accountProfile",
+          "sayarti.records.v1",
+        ]);
+        const account = await restoreEmailSession();
+        if (cancelled) return;
         const savedLanguage = values[0]?.[1];
         if (
           savedLanguage === "ar" ||
@@ -339,19 +408,26 @@ export default function HomeScreen() {
           setLanguage(savedLanguage);
         if (values[1]?.[1] === "true") setDarkMode(true);
         if (values[2]?.[1]) setProfileLink(values[2][1] as string);
-        const savedProfile = values[3]?.[1];
-        if (savedProfile) {
-          const profile = parseAccountProfile(savedProfile);
-          if (profile) {
-            setFirstName(profile.firstName);
-            setLastName(profile.lastName);
-            setSignupFirstName(profile.firstName);
-            setSignupLastName(profile.lastName);
-            setVehicle(profile.vehicle);
-            setSignupVehicle(profile.vehicle);
-            setPage((current) => (current === "welcome" ? "home" : current));
+
+        if (account) {
+          setIsAuthenticated(true);
+          setEmailAddress(account.email);
+          setAuthEmail(account.email);
+          setFirstName(account.firstName);
+          setLastName(account.lastName);
+          setSignupFirstName(account.firstName);
+          setSignupLastName(account.lastName);
+          const savedProfile = parseAccountProfile(values[3]?.[1] ?? "");
+          if (savedProfile) {
+            setVehicle(savedProfile.vehicle);
+            setSignupVehicle(savedProfile.vehicle);
+            setPage("home");
+          } else {
+            setVehicle({ brand: "", model: "", year: "", fuel: "diesel", mileage: "" });
+            setPage("vehicle");
           }
         }
+
         const savedRecords = parseRecordsSnapshot(values[4]?.[1] ?? null);
         setMaintenanceRecords(savedRecords.maintenanceRecords);
         setExpenses(savedRecords.expenses);
@@ -359,13 +435,19 @@ export default function HomeScreen() {
         setDocumentsList(savedRecords.documentsList);
         setServicePlans(savedRecords.servicePlans);
         setReminders(savedRecords.reminders);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        setSettingsLoaded(true);
-        setAccountProfileLoaded(true);
-        setRecordsLoaded(true);
-      });
+      } catch {
+        // Keep the signed-out welcome/demo path available when local storage is unavailable.
+      } finally {
+        if (!cancelled) {
+          setSettingsLoaded(true);
+          setAccountProfileLoaded(true);
+          setRecordsLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -378,12 +460,13 @@ export default function HomeScreen() {
   }, [darkMode, language, profileLink, settingsLoaded]);
 
   useEffect(() => {
-    if (!accountProfileLoaded || !firstName.trim() || !lastName.trim()) return;
+    if (!accountProfileLoaded || !isAuthenticated || !firstName.trim() || !lastName.trim()) return;
     const profile: AccountProfile = { firstName, lastName, vehicle };
+    if (validateAccountProfile(profile)) return;
     AsyncStorage.setItem("sayarti.accountProfile", JSON.stringify(profile)).catch(
       () => undefined,
     );
-  }, [accountProfileLoaded, firstName, lastName, vehicle]);
+  }, [accountProfileLoaded, firstName, isAuthenticated, lastName, vehicle]);
 
   useEffect(() => {
     if (!recordsLoaded) return;
@@ -413,6 +496,15 @@ export default function HomeScreen() {
     const timer = setTimeout(() => setNotice(""), 2400);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (authStep !== "code" || resendCountdown <= 0) return;
+    const timer = setInterval(
+      () => setResendCountdown((current) => Math.max(0, current - 1)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [authStep, resendCountdown]);
 
   useEffect(() => {
     if (!recordsLoaded) return;
@@ -463,8 +555,7 @@ export default function HomeScreen() {
 
   const showNotice = (message = tr("savedToast")) => setNotice(message);
 
-  const createLocalProfile = async () => {
-    const profile: AccountProfile = {
+  const makeSignupProfile = (): AccountProfile => ({
       firstName: signupFirstName.trim(),
       lastName: signupLastName.trim(),
       vehicle: {
@@ -474,33 +565,122 @@ export default function HomeScreen() {
         year: signupVehicle.year.trim(),
         mileage: signupVehicle.mileage.trim(),
       },
-    };
-    const error = validateAccountProfile(profile);
-    if (error) {
-      setRegistrationError(tr(error));
-      return;
-    }
+    });
 
-    try {
-      await AsyncStorage.setItem(
-        "sayarti.accountProfile",
-        JSON.stringify(profile),
-      );
-    } catch {
-      setRegistrationError(tr("profileSaveError"));
-      return;
-    }
-
+  const requestAuthCode = async (register: boolean) => {
+    if (authBusy) return;
     setRegistrationError("");
-    setFirstName(profile.firstName);
-    setLastName(profile.lastName);
-    setSignupFirstName(profile.firstName);
-    setSignupLastName(profile.lastName);
-    setVehicle(profile.vehicle);
-    setSignupVehicle(profile.vehicle);
-    setAccountProfileLoaded(true);
-    setPage("home");
-    showNotice(tr("profileSaved"));
+    const normalizedEmail = emailAddress.trim().toLowerCase();
+    if (register) {
+      const error = validateAccountProfile(makeSignupProfile());
+      if (error) {
+        setRegistrationError(tr(error));
+        return;
+      }
+    }
+    setAuthBusy(true);
+    try {
+      await requestEmailCode({
+        email: normalizedEmail,
+        purpose: register ? "signup" : "login",
+        language,
+      });
+      setAuthEmail(normalizedEmail);
+      setEmailAddress(normalizedEmail);
+      setVerificationCode("");
+      setAuthStep("code");
+      setResendCountdown(60);
+    } catch (error) {
+      setRegistrationError(tr(emailAuthErrorKey(error)));
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const submitVerification = async (register: boolean) => {
+    if (authBusy) return;
+    setRegistrationError("");
+    const profile = register ? makeSignupProfile() : null;
+    if (profile) {
+      const error = validateAccountProfile(profile);
+      if (error) {
+        setRegistrationError(tr(error));
+        setAuthStep("details");
+        return;
+      }
+    }
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setRegistrationError(tr("verificationError"));
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      const account = await verifyEmailCode({
+        email: authEmail,
+        purpose: register ? "signup" : "login",
+        language,
+        code: verificationCode,
+        ...(profile
+          ? { firstName: profile.firstName, lastName: profile.lastName }
+          : {}),
+      });
+      setIsAuthenticated(true);
+      setAuthEmail(account.email);
+      setEmailAddress(account.email);
+      setFirstName(account.firstName);
+      setLastName(account.lastName);
+      setSignupFirstName(account.firstName);
+      setSignupLastName(account.lastName);
+      setAccountProfileLoaded(true);
+      setAuthStep("details");
+      setVerificationCode("");
+
+      if (register && profile) {
+        try {
+          await AsyncStorage.setItem(
+            "sayarti.accountProfile",
+            JSON.stringify(profile),
+          );
+        } catch {
+          await logoutEmailSession();
+          setIsAuthenticated(false);
+          setRegistrationError(tr("profileSaveError"));
+          return;
+        }
+        setVehicle(profile.vehicle);
+        setSignupVehicle(profile.vehicle);
+        setPage("home");
+        showNotice(tr("profileSaved"));
+        return;
+      }
+
+      const savedProfile = parseAccountProfile(
+        (await AsyncStorage.getItem("sayarti.accountProfile")) ?? "",
+      );
+      if (savedProfile) {
+        setVehicle(savedProfile.vehicle);
+        setSignupVehicle(savedProfile.vehicle);
+        setPage("home");
+      } else {
+        setVehicle({ brand: "", model: "", year: "", fuel: "diesel", mileage: "" });
+        setPage("vehicle");
+      }
+      showNotice(tr("signedInAs"));
+    } catch (error) {
+      setRegistrationError(tr(emailAuthErrorKey(error)));
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const signOut = async () => {
+    await logoutEmailSession();
+    setIsAuthenticated(false);
+    setAuthStep("details");
+    setVerificationCode("");
+    setRegistrationError("");
+    setPage("welcome");
+    showNotice(tr("signOutNotice"));
   };
 
   const openForm = (kind: RecordKind) => {
@@ -589,6 +769,7 @@ export default function HomeScreen() {
   const saveScheduledReminder = async (
     target: RecordTarget,
     scheduledAt: string,
+    soundId: ReminderSoundId,
     requestPermission: boolean,
   ) => {
     const key = makeReminderKey(target.kind, target.recordId);
@@ -596,6 +777,7 @@ export default function HomeScreen() {
     await cancelNativeReminder(previous);
     let permissionGranted = false;
     let notificationId: string | undefined;
+    const soundFile = reminderSoundFiles[soundId];
 
     if (Platform.OS === "web") {
       if (typeof window !== "undefined" && "Notification" in window) {
@@ -613,22 +795,27 @@ export default function HomeScreen() {
         }
         permissionGranted = permission.granted;
         if (permissionGranted) {
+          const channelId = `sayarti-reminders-${soundId}`;
           if (Platform.OS === "android") {
-            await Notifications.setNotificationChannelAsync("sayarti-reminders", {
-              name: tr("reminders"),
-              importance: Notifications.AndroidImportance.DEFAULT,
+            await Notifications.setNotificationChannelAsync(channelId, {
+              name: `${tr("reminders")} · ${tr(reminderSoundTranslationKeys[soundId])}`,
+              importance: Notifications.AndroidImportance.HIGH,
+              sound: soundFile,
+              vibrationPattern:
+                soundId === "alarm" ? [0, 250, 150, 250, 150, 500] : [0, 250],
             });
           }
           notificationId = await Notifications.scheduleNotificationAsync({
             content: {
               title: tr("reminderNotificationTitle"),
               body: `${tr("reminderNotificationBody")} · ${target.title}`,
-              data: { kind: target.kind, recordId: target.recordId },
+              data: { kind: target.kind, recordId: target.recordId, soundId },
+              sound: soundFile,
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.DATE,
               date: new Date(scheduledAt),
-              ...(Platform.OS === "android" ? { channelId: "sayarti-reminders" } : {}),
+              ...(Platform.OS === "android" ? { channelId } : {}),
             },
           });
         }
@@ -639,27 +826,54 @@ export default function HomeScreen() {
 
     setReminders((current) => [
       ...current.filter((item) => item.key !== key),
-      { key, kind: target.kind, recordId: target.recordId, title: target.title, scheduledAt, notificationId },
+      {
+        key,
+        kind: target.kind,
+        recordId: target.recordId,
+        title: target.title,
+        scheduledAt,
+        soundId,
+        notificationId,
+      },
     ]);
     return permissionGranted;
   };
 
-  const openSchedule = (kind: RecordKind, recordId: string, title: string) =>
+  const openSchedule = (kind: RecordKind, recordId: string, title: string) => {
+    const key = makeReminderKey(kind, recordId);
+    const existing = reminders.find((item) => item.key === key);
+    const existingDate = existing ? new Date(existing.scheduledAt) : null;
+    setReminderDateTime(
+      existingDate && existingDate.getTime() > Date.now()
+        ? existingDate
+        : suggestedReminderDateTime(),
+    );
+    setSelectedReminderSound(existing?.soundId ?? "default");
+    setScheduleInputValid(true);
+    setScheduleError("");
+    setScheduleOpenId((value) => value + 1);
     setScheduleTarget({ kind, recordId, title });
+  };
 
-  const chooseReminderInterval = async (days: ReminderDays) => {
+  const saveSelectedReminder = async () => {
     if (!scheduleTarget) return;
+    if (!scheduleInputValid || reminderDateTime.getTime() <= Date.now()) {
+      setScheduleError(tr("invalidReminderTime"));
+      return;
+    }
     let permissionGranted = false;
     try {
       permissionGranted = await saveScheduledReminder(
         scheduleTarget,
-        reminderDateAfter(days),
+        reminderDateTime.toISOString(),
+        selectedReminderSound,
         true,
       );
     } catch {
       permissionGranted = false;
     }
     setScheduleTarget(null);
+    setScheduleError("");
     showNotice(
       permissionGranted ? tr("reminderSaved") : tr("reminderSavedInApp"),
     );
@@ -850,6 +1064,7 @@ export default function HomeScreen() {
       void saveScheduledReminder(
         { kind: formKind, recordId, title },
         existingReminder.scheduledAt,
+        existingReminder.soundId ?? "default",
         false,
       );
     }
@@ -1847,7 +2062,7 @@ export default function HomeScreen() {
                     : new Date(item.scheduledAt).toLocaleString(
                         language === "ar" ? "ar-DZ" : language === "fr" ? "fr-DZ" : "en-DZ",
                         { dateStyle: "medium", timeStyle: "short" },
-                      )}
+                      )} · {tr(reminderSoundTranslationKeys[item.soundId ?? "default"])}
                 </Text>
               </View>
               <Pressable
@@ -2063,15 +2278,27 @@ export default function HomeScreen() {
         </View>
       </View>
       <Pressable
-        onPress={() => setPage("login")}
+        onPress={() => {
+          if (isAuthenticated) {
+            void signOut();
+          } else {
+            setAuthStep("details");
+            setRegistrationError("");
+            setPage("login");
+          }
+        }}
         style={[
           styles.secondaryButton,
           { borderColor: c.line, flexDirection: direction },
         ]}
       >
-        <Ionicons name="log-in-outline" size={18} color={c.ink} />
+        <Ionicons
+          name={isAuthenticated ? "log-out-outline" : "log-in-outline"}
+          size={18}
+          color={c.ink}
+        />
         <Text style={[styles.secondaryButtonText, { color: c.ink }]}>
-          {tr("demoLogin")}
+          {tr(isAuthenticated ? "logout" : "demoLogin")}
         </Text>
       </Pressable>
     </>
@@ -2112,6 +2339,38 @@ export default function HomeScreen() {
         />
       </View>
     );
+    const emailField = (
+      <View style={{ gap: 8 }}>
+        <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+          {tr("email")}
+        </Text>
+        <TextInput
+          value={emailAddress}
+          onChangeText={(value) => {
+            setEmailAddress(value);
+            if (registrationError) setRegistrationError("");
+          }}
+          placeholder="name@example.com"
+          placeholderTextColor={c.muted}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          textAlign="left"
+          style={[
+            styles.input,
+            {
+              backgroundColor: c.surface,
+              color: c.ink,
+              borderColor: c.line,
+              writingDirection: "ltr",
+            },
+          ]}
+        />
+      </View>
+    );
+    const resendSeconds = resendCountdown;
 
     return (
       <KeyboardAvoidingView
@@ -2125,7 +2384,14 @@ export default function HomeScreen() {
         >
           <View style={styles.authWrap}>
             <Pressable
-              onPress={() => setPage(register || !firstName ? "welcome" : "home")}
+              onPress={() => {
+                if (authStep === "code") {
+                  setAuthStep("details");
+                  setVerificationCode("");
+                } else {
+                  setPage(register || !isAuthenticated ? "welcome" : "home");
+                }
+              }}
               style={[styles.backButton, { flexDirection: direction }]}
             >
               <Ionicons
@@ -2162,64 +2428,86 @@ export default function HomeScreen() {
               {register ? tr("signupNote") : tr("loginNote")}
             </Text>
 
-            {register ? (
-              <View style={{ gap: 13, marginTop: 10 }}>
-                <Text
-                  style={[
-                    styles.signupSectionTitle,
-                    { color: c.ink },
-                    textDirection,
-                  ]}
+            {authStep === "code" ? (
+              <View style={{ gap: 14, marginTop: 24 }}>
+                <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
+                  {tr("codeSent")} {authEmail}
+                </Text>
+                <View style={{ gap: 8 }}>
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+                    {tr("verificationCode")}
+                  </Text>
+                  <TextInput
+                    value={verificationCode}
+                    onChangeText={(value) => {
+                      setVerificationCode(value.replace(/\D/g, "").slice(0, 6));
+                      if (registrationError) setRegistrationError("");
+                    }}
+                    placeholder="000000"
+                    placeholderTextColor={c.muted}
+                    keyboardType="number-pad"
+                    autoComplete="one-time-code"
+                    textContentType="oneTimeCode"
+                    maxLength={6}
+                    textAlign="center"
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: c.surface,
+                        color: c.ink,
+                        borderColor: c.line,
+                        writingDirection: "ltr",
+                        letterSpacing: 8,
+                        fontSize: 20,
+                        fontWeight: "800",
+                      },
+                    ]}
+                  />
+                </View>
+                {registrationError ? (
+                  <Text accessibilityRole="alert" style={[styles.formError, { color: c.red }, textDirection]}>
+                    {registrationError}
+                  </Text>
+                ) : null}
+                <Pressable
+                  disabled={authBusy || resendSeconds > 0}
+                  onPress={() => requestAuthCode(register)}
+                  style={{ alignSelf: isRTL ? "flex-end" : "flex-start", paddingVertical: 4 }}
                 >
+                  <Text style={{ color: resendSeconds > 0 ? c.muted : c.green, fontWeight: "800" }}>
+                    {resendSeconds > 0
+                      ? `${tr("resendCountdown")} ${resendSeconds}${tr("seconds")}`
+                      : tr("resendCode")}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setAuthStep("details");
+                    setVerificationCode("");
+                    setRegistrationError("");
+                  }}
+                  style={{ alignSelf: isRTL ? "flex-end" : "flex-start", paddingVertical: 4 }}
+                >
+                  <Text style={{ color: c.muted, fontWeight: "700" }}>{tr("changeEmail")}</Text>
+                </Pressable>
+              </View>
+            ) : register ? (
+              <View style={{ gap: 13, marginTop: 10 }}>
+                <Text style={[styles.signupSectionTitle, { color: c.ink }, textDirection]}>
                   {tr("personalInformation")}
                 </Text>
-                {registrationField(
-                  "firstName",
-                  signupFirstName,
-                  setSignupFirstName,
-                )}
-                {registrationField(
-                  "lastName",
-                  signupLastName,
-                  setSignupLastName,
-                )}
-                <Text
-                  style={[
-                    styles.signupSectionTitle,
-                    { color: c.ink, marginTop: 4 },
-                    textDirection,
-                  ]}
-                >
+                {registrationField("firstName", signupFirstName, setSignupFirstName)}
+                {registrationField("lastName", signupLastName, setSignupLastName)}
+                {emailField}
+                <Text style={[styles.signupSectionTitle, { color: c.ink, marginTop: 4 }, textDirection]}>
                   {tr("carDetails")}
                 </Text>
-                {registrationField(
-                  "brandName",
-                  signupVehicle.brand,
-                  (brand) =>
-                    setSignupVehicle((current) => ({ ...current, brand })),
-                )}
-                {registrationField(
-                  "model",
-                  signupVehicle.model,
-                  (model) =>
-                    setSignupVehicle((current) => ({ ...current, model })),
-                )}
-                {registrationField(
-                  "year",
-                  signupVehicle.year,
-                  (year) =>
-                    setSignupVehicle((current) => ({ ...current, year })),
-                  "number-pad",
-                )}
+                {registrationField("brandName", signupVehicle.brand, (brand) => setSignupVehicle((current) => ({ ...current, brand })))}
+                {registrationField("model", signupVehicle.model, (model) => setSignupVehicle((current) => ({ ...current, model })))}
+                {registrationField("year", signupVehicle.year, (year) => setSignupVehicle((current) => ({ ...current, year })), "number-pad")}
                 <View style={{ gap: 8 }}>
-                  <Text
-                    style={[styles.fieldLabel, { color: c.ink }, textDirection]}
-                  >
-                    {tr("fuelType")}
-                  </Text>
-                  <View
-                    style={[styles.fuelChipList, { flexDirection: direction }]}
-                  >
+                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>{tr("fuelType")}</Text>
+                  <View style={[styles.fuelChipList, { flexDirection: direction }]}>
                     {vehicleFuelTypes.map((fuel) => {
                       const selected = signupVehicle.fuel === fuel;
                       return (
@@ -2231,115 +2519,70 @@ export default function HomeScreen() {
                             setSignupVehicle((current) => ({ ...current, fuel }));
                             setRegistrationError("");
                           }}
-                          style={[
-                            styles.fuelChip,
-                            {
-                              backgroundColor: selected ? c.dark : c.surface,
-                              borderColor: selected ? c.dark : c.line,
-                            },
-                          ]}
+                          style={[styles.fuelChip, { backgroundColor: selected ? c.dark : c.surface, borderColor: selected ? c.dark : c.line }]}
                         >
-                          <Text
-                            style={[
-                              styles.fuelChipText,
-                              { color: selected ? "#FFFFFF" : c.ink },
-                            ]}
-                          >
-                            {tr(fuel)}
-                          </Text>
+                          <Text style={[styles.fuelChipText, { color: selected ? "#FFFFFF" : c.ink }]}>{tr(fuel)}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
                 </View>
-                {registrationField(
-                  "mileage",
-                  signupVehicle.mileage,
-                  (mileage) =>
-                    setSignupVehicle((current) => ({ ...current, mileage })),
-                  "number-pad",
-                )}
+                {registrationField("mileage", signupVehicle.mileage, (mileage) => setSignupVehicle((current) => ({ ...current, mileage })), "number-pad")}
                 {registrationError ? (
-                  <Text
-                    accessibilityRole="alert"
-                    style={[styles.formError, { color: c.red }, textDirection]}
-                  >
+                  <Text accessibilityRole="alert" style={[styles.formError, { color: c.red }, textDirection]}>
                     {registrationError}
                   </Text>
                 ) : null}
               </View>
             ) : (
               <View style={{ gap: 14, marginTop: 24 }}>
-                <View>
-                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
-                    {tr("email")}
+                {emailField}
+                {registrationError ? (
+                  <Text accessibilityRole="alert" style={[styles.formError, { color: c.red }, textDirection]}>
+                    {registrationError}
                   </Text>
-                  <TextInput
-                    placeholder="name@example.com"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    style={[
-                      styles.input,
-                      {
-                        marginTop: 8,
-                        backgroundColor: c.surface,
-                        color: c.ink,
-                        borderColor: c.line,
-                      },
-                    ]}
-                  />
-                </View>
-                <View>
-                  <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
-                    {tr("password")}
-                  </Text>
-                  <TextInput
-                    placeholder="••••••••"
-                    secureTextEntry
-                    style={[
-                      styles.input,
-                      {
-                        marginTop: 8,
-                        backgroundColor: c.surface,
-                        color: c.ink,
-                        borderColor: c.line,
-                      },
-                    ]}
-                  />
-                </View>
+                ) : null}
               </View>
             )}
 
             <Pressable
-              onPress={
-                register
-                  ? createLocalProfile
-                  : () => {
-                      setPage("home");
-                      showNotice(tr("signedInAs"));
-                    }
+              disabled={authBusy || (authStep === "code" && verificationCode.length !== 6)}
+              onPress={() =>
+                authStep === "code"
+                  ? submitVerification(register)
+                  : requestAuthCode(register)
               }
-              style={[styles.authButton, { backgroundColor: c.green }]}
+              style={[styles.authButton, { backgroundColor: c.green, opacity: authBusy ? 0.6 : 1 }]}
             >
               <Text style={styles.authButtonText}>
-                {register ? tr("createAccount") : tr("signIn")}
+                {authStep === "code" ? tr("verifyCode") : tr("sendCode")}
               </Text>
             </Pressable>
+            {authStep === "details" ? (
+              <Pressable
+                onPress={() => {
+                  setRegistrationError("");
+                  setAuthStep("details");
+                  setVerificationCode("");
+                  setPage(register ? "login" : "register");
+                }}
+                style={styles.switchAuth}
+              >
+                <Text style={[styles.switchAuthText, { color: c.muted }, textDirection]}>
+                  {register ? tr("signIn") : tr("noAccount")} {" "}
+                  <Text style={{ color: c.green, fontWeight: "800" }}>
+                    {register ? tr("signIn") : tr("createAccount")}
+                  </Text>
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => {
-                setRegistrationError("");
-                setPage(register ? "login" : "register");
+                setIsAuthenticated(false);
+                setPage("home");
               }}
-              style={styles.switchAuth}
+              style={styles.guestButton}
             >
-              <Text style={[styles.switchAuthText, { color: c.muted }, textDirection]}>
-                {register ? tr("signIn") : tr("noAccount")} {" "}
-                <Text style={{ color: c.green, fontWeight: "800" }}>
-                  {register ? tr("signIn") : tr("createAccount")}
-                </Text>
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setPage("home")} style={styles.guestButton}>
               <Text style={[styles.guestText, { color: c.ink }]}>
                 {tr("continueDemo")}
               </Text>
@@ -2515,11 +2758,26 @@ export default function HomeScreen() {
       {PrimaryButton({
         label: tr("save"),
         onPress: () => {
+          const profile: AccountProfile = { firstName, lastName, vehicle };
+          const error = validateAccountProfile(profile);
+          if (error) {
+            setRegistrationError(tr(error));
+            return;
+          }
+          setRegistrationError("");
+          AsyncStorage.setItem("sayarti.accountProfile", JSON.stringify(profile)).catch(() => {
+            setRegistrationError(tr("profileSaveError"));
+          });
           setPage("home");
           showNotice();
         },
         icon: "checkmark-outline",
       })}
+      {registrationError ? (
+        <Text accessibilityRole="alert" style={[styles.formError, { color: c.red }, textDirection]}>
+          {registrationError}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -2874,30 +3132,90 @@ export default function HomeScreen() {
               {scheduleTarget?.title}
             </Text>
             <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
-              {tr("remindAfter")}
+              {tr("reminderDate")}
             </Text>
-            <View style={{ flexDirection: direction, flexWrap: "wrap", gap: 9 }}>
-              {reminderIntervals.map((days) => {
-                const label: TranslationKey =
-                  days === 1
-                    ? "remindOneDay"
-                    : days === 3
-                      ? "remindThreeDays"
-                      : days === 7
-                        ? "remindOneWeek"
-                        : "remindOneMonth";
+            <ReminderDateTimePicker
+              key={scheduleOpenId}
+              value={reminderDateTime}
+              onChange={(value) => {
+                setReminderDateTime(value);
+                setScheduleError("");
+              }}
+              onValidityChange={(valid) => {
+                setScheduleInputValid(valid);
+                if (valid) setScheduleError("");
+              }}
+              language={language}
+              isRTL={isRTL}
+              labels={{
+                date: tr("reminderDate"),
+                time: tr("reminderTime"),
+                dateInputHint: tr("dateInputHint"),
+                timeInputHint: tr("timeInputHint"),
+              }}
+              colors={{
+                ink: c.ink,
+                muted: c.muted,
+                surface: c.surface,
+                line: c.line,
+                green: c.green,
+              }}
+            />
+            <Text style={[styles.fieldLabel, { color: c.ink }, textDirection]}>
+              {tr("reminderSound")}
+            </Text>
+            <View style={{ flexDirection: direction, flexWrap: "wrap", gap: 8 }}>
+              {reminderSoundIds.map((soundId) => {
+                const selected = selectedReminderSound === soundId;
                 return (
                   <Pressable
-                    key={days}
+                    key={soundId}
                     accessibilityRole="button"
-                    onPress={() => chooseReminderInterval(days)}
-                    style={[styles.authButton, { backgroundColor: c.green, flex: 1, minWidth: 100 }]}
+                    accessibilityState={{ selected }}
+                    onPress={() => setSelectedReminderSound(soundId)}
+                    style={[
+                      styles.recordActionButton,
+                      {
+                        flexDirection: direction,
+                        backgroundColor: selected ? c.greenSoft : c.surface,
+                        borderColor: selected ? c.green : c.line,
+                      },
+                    ]}
                   >
-                    <Text style={styles.authButtonText}>{tr(label)}</Text>
+                    <Ionicons
+                      name={selected ? "radio-button-on" : "radio-button-off"}
+                      size={16}
+                      color={selected ? c.green : c.muted}
+                    />
+                    <Text
+                      style={[
+                        styles.recordActionText,
+                        { color: selected ? c.green : c.ink },
+                      ]}
+                    >
+                      {tr(reminderSoundTranslationKeys[soundId])}
+                    </Text>
                   </Pressable>
                 );
               })}
             </View>
+            {Platform.OS === "web" ? (
+              <Text style={[styles.bodyText, { color: c.muted }, textDirection]}>
+                {tr("webSoundNote")}
+              </Text>
+            ) : null}
+            {scheduleError ? (
+              <Text style={[styles.formError, { color: c.red }, textDirection]}>
+                {scheduleError}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={saveSelectedReminder}
+              style={[styles.authButton, { backgroundColor: c.green }]}
+            >
+              <Text style={styles.authButtonText}>{tr("saveReminder")}</Text>
+            </Pressable>
             {scheduleTarget && reminders.find((item) => item.key === makeReminderKey(scheduleTarget.kind, scheduleTarget.recordId)) ? (
               <Pressable
                 accessibilityRole="button"

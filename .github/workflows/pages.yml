@@ -50,6 +50,7 @@ jobs:
         run: pnpm exec expo export --platform web --output-dir ../dist/public/sayarti-app
         env:
           EXPO_BASE_URL: /Sayarti-DZ/sayarti-app
+          EXPO_PUBLIC_API_BASE_URL: ${{ vars.SAYARTI_API_BASE_URL }}
           CI: "1"
       - name: Configure Pages
         uses: actions/configure-pages@v5
