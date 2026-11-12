@@ -158,9 +158,9 @@ const config: ExpoConfig = {
         defaultChannel: "sayarti-reminders",
         color: "#0B4A2A",
         sounds: [
-          "./assets/notifications/sayarti-soft.wav",
-          "./assets/notifications/sayarti-bell.wav",
-          "./assets/notifications/sayarti-alarm.wav",
+          "./assets/notifications/sayarti_soft.wav",
+          "./assets/notifications/sayarti_bell.wav",
+          "./assets/notifications/sayarti_alarm.wav",
         ],
       },
     ],

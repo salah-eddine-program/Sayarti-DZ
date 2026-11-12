@@ -167,9 +167,9 @@ const emptyDraft: Draft = {
 
 const reminderSoundFiles: Record<ReminderSoundId, string> = {
   default: "default",
-  soft: "sayarti-soft.wav",
-  bell: "sayarti-bell.wav",
-  alarm: "sayarti-alarm.wav",
+  soft: "sayarti_soft.wav",
+  bell: "sayarti_bell.wav",
+  alarm: "sayarti_alarm.wav",
 };
 
 const reminderSoundTranslationKeys: Record<ReminderSoundId, TranslationKey> = {
